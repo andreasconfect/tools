@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Catalog Ads Explorer · Confect</title>
+<style>
+  :root{--accent:#4f46e5;--accent2:#eef0ff;--bg:#ffffff;--panel:#f7f8fb;--edge:#e5e7ef;--ink:#1c2030;--mut:#6b7280}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:13.5px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+  header{padding:14px 20px;border-bottom:1px solid var(--edge);display:flex;align-items:center;gap:12px}
+  h1{font-size:16px;margin:0;font-weight:700;letter-spacing:-.01em}
+  .badge{font-size:11px;color:var(--accent);background:var(--accent2);border-radius:20px;padding:3px 10px;font-weight:600}
+  .grow{flex:1}#status{color:var(--mut);font-size:12px}
+  button,select,input{font:inherit}
+  button{cursor:pointer;border-radius:9px;border:1px solid var(--edge);background:#fff;color:var(--ink);padding:8px 12px}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  #empty{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg)}
+  #drop{width:min(560px,90vw);border:2px dashed var(--edge);border-radius:18px;padding:48px 32px;text-align:center;background:var(--panel)}
+  #drop.hot{border-color:var(--accent);background:var(--accent2)}
+  #drop h2{margin:0 0 6px;font-size:20px}#drop p{color:var(--mut);margin:0 0 20px}
+  #app{display:none;flex-direction:column;height:100vh}
+  .mainrow{display:flex;flex:1;min-height:0}
+  #sidebar{width:280px;flex:none;overflow:auto;border-right:1px solid var(--edge);background:var(--panel)}
+  #mainpane{flex:1;min-width:0;overflow:auto;display:flex;flex-direction:column}
+  .sbhead{position:sticky;top:0;background:var(--panel);z-index:2;display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid var(--edge);font-weight:700}
+  .sbhead .link{color:var(--accent);cursor:pointer;font-size:12px;font-weight:600}
+  .fgroup .fgh{color:var(--accent);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.05em;padding:12px 14px 4px}
+  .fdim{border-bottom:1px solid var(--edge)}
+  .fdh{display:flex;align-items:center;gap:6px;padding:7px 14px;cursor:pointer;user-select:none}
+  .fdh:hover{background:var(--accent2)}
+  .fdh.active{font-weight:600}
+  .fdlabel{flex:1;font-size:12.5px}
+  .fbadge{background:var(--accent);color:#fff;border-radius:20px;font-size:10px;padding:1px 7px;font-weight:600}
+  .chev{color:var(--mut);font-size:10px}
+  .fdbody{padding:6px 14px 10px}
+  .fdbody input.fs{width:100%;padding:5px 7px;border:1px solid var(--edge);border-radius:6px;margin:4px 0}
+  .fdbody .selall{font-size:11px;color:var(--accent);cursor:pointer;display:block;margin-bottom:4px}
+  .fdbody .vals{max-height:190px;overflow:auto}.fdbody .vals label{display:block;padding:1px 0;font-size:12.5px;cursor:pointer}
+  .bar{padding:12px 20px;border-bottom:1px solid var(--edge);display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+  .pick{display:flex;flex-direction:column;gap:4px}
+  .pick .lab{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
+  .pickbtn{min-width:230px;text-align:left;display:flex;justify-content:space-between;gap:10px;align-items:center}
+  .pickbtn small{color:var(--mut)}
+  .seg{display:inline-flex;border:1px solid var(--edge);border-radius:9px;overflow:hidden}
+  .seg button{border:0;border-radius:0;padding:8px 12px;background:#fff;color:var(--mut)}
+  .seg button.on{background:var(--accent);color:#fff;font-weight:600}
+  .swap{border:1px solid var(--edge);background:#fff;border-radius:9px;width:38px;height:38px;font-size:16px}
+  .num{width:64px}
+  #filters{display:flex;gap:10px;flex-wrap:wrap;padding:10px 20px 0}
+  .fchip{background:var(--panel);border:1px solid var(--edge);border-radius:10px;padding:10px;min-width:210px}
+  .fchip .top{display:flex;gap:6px;align-items:center;margin-bottom:6px}
+  .fchip select{flex:1;padding:5px 6px;border:1px solid var(--edge);border-radius:6px;background:#fff}
+  .fchip .x{cursor:pointer;color:var(--mut)}
+  .fchip input.fs{width:100%;padding:5px 7px;border:1px solid var(--edge);border-radius:6px;margin-bottom:4px}
+  .fchip .selall{font-size:11px;color:var(--accent);cursor:pointer;display:block;margin-bottom:4px}
+  .fchip .vals{max-height:150px;overflow:auto}.fchip .vals label{display:block;padding:1px 0}
+  section{padding:16px 20px 24px;overflow:auto}
+  table{border-collapse:separate;border-spacing:0;width:100%;font-size:13px;background:#fff}
+  th,td{padding:9px 11px;border-bottom:1px solid var(--edge);white-space:nowrap}
+  th{position:sticky;top:0;background:#fff;color:var(--mut);font-weight:600;text-align:right;cursor:pointer;user-select:none}
+  th.grp,td.grp{text-align:left}
+  td{text-align:right;font-variant-numeric:tabular-nums}td.grp{font-weight:600}
+  tr.spacer td{border:0;height:14px;background:repeating-linear-gradient(90deg,var(--edge),var(--edge) 4px,transparent 4px,transparent 8px);background-position:center;background-size:100% 1px;background-repeat:no-repeat}
+  td.hlcol{box-shadow:inset 1px 0 0 var(--accent),inset -1px 0 0 var(--accent)}
+  tr.hlrow td{box-shadow:inset 0 1px 0 var(--accent),inset 0 -1px 0 var(--accent)}
+  tr.hlrow td.hlcol{box-shadow:inset 1px 1px 0 var(--accent),inset -1px -1px 0 var(--accent)}
+  .subttl{color:var(--mut);font-size:12px;margin:2px 0 10px}
+  .sarr{font-size:10px;margin-left:4px;color:var(--accent);vertical-align:middle}
+  td.grp.act{cursor:pointer}td.grp.act:hover{color:var(--accent);text-decoration:underline}
+  .combosep{border-top:2px dashed var(--edge);margin:26px 0 8px}
+  tr.baserow td{font-weight:600;box-shadow:inset 3px 0 0 var(--accent)}
+  tr.baserow td.grp{color:var(--accent)}
+  .focusbar{background:var(--accent2);border:1px solid var(--accent);border-radius:10px;padding:9px 13px;margin-bottom:10px;font-size:13px}
+  .focusbar .link{margin-left:10px;color:var(--accent);cursor:pointer;font-weight:600}
+  #foot{flex:none;background:var(--panel);border-top:1px solid var(--edge)}
+  #info{display:flex;gap:24px;flex-wrap:wrap;padding:12px 20px 8px}
+  #info .kpi{display:flex;flex-direction:column}#info .kpi b{font-size:16px}#info .kpi span{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.03em}
+  .footbar{display:flex;align-items:center;gap:14px;padding:6px 20px 12px}
+  .applied{flex:1;color:var(--mut);font-size:12px;min-width:0}
+  .applied b{color:var(--ink)} .applied .link{color:var(--accent);cursor:pointer}
+  #copy{flex:none}
+  #modal{position:fixed;inset:0;background:rgba(20,22,34,.35);display:none;align-items:flex-start;justify-content:center;z-index:50}
+  #modal.open{display:flex}
+  .sheet{background:#fff;width:min(720px,94vw);max-height:82vh;margin-top:6vh;border-radius:16px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.2)}
+  .sheet h3{margin:0;padding:16px 18px;border-bottom:1px solid var(--edge);font-size:15px}
+  .sheet .msearch{padding:12px 18px;border-bottom:1px solid var(--edge)}
+  .sheet .msearch input{width:100%;padding:10px 12px;border:1px solid var(--edge);border-radius:10px}
+  .sheet .body{overflow:auto;padding:6px 0}
+  .gh{position:sticky;top:0;background:#fff;color:var(--accent);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.05em;padding:10px 18px 4px;border-bottom:1px solid var(--edge)}
+  .mo{padding:9px 18px;cursor:pointer}.mo:hover{background:var(--accent2)}
+  .mo .t{font-weight:600}.mo .ex{color:var(--mut);font-size:11.5px}
+  .ctx{position:absolute;z-index:60;background:#fff;border:1px solid var(--edge);border-radius:10px;box-shadow:0 12px 34px rgba(0,0,0,.18);display:none;overflow:hidden;min-width:210px}
+  .ctx .ci{padding:9px 14px;cursor:pointer;font-size:13px}
+  .ctx .ci:hover{background:var(--accent2)}
+  .ctx .ci.hd{cursor:default;color:var(--mut);border-bottom:1px solid var(--edge);font-size:11.5px}
+  .ctx .ci.hd:hover{background:#fff}
+  .fmode{display:inline-flex;border:1px solid var(--edge);border-radius:6px;overflow:hidden;margin:0 6px}
+  .fmode button{border:0;border-radius:0;padding:3px 9px;background:#fff;color:var(--mut);font-size:11px}
+  .fmode button.on{background:var(--accent);color:#fff;font-weight:600}
+</style>
+</head>
+<body>
+<div id="empty"><div id="drop">
+  <div class="badge" style="margin-bottom:12px">Confect · Catalog Ads Explorer</div>
+  <h2>Load your dataset to begin</h2>
+  <p>Drop <code>latest-confect-data.parquet</code> here, or choose the file.</p>
+  <button class="primary" id="pickBtn">Choose latest-confect-data.parquet</button>
+  <input type="file" id="file" accept=".parquet" style="display:none"/>
+  <div id="status" style="margin-top:14px"></div>
+</div></div>
+
+<div id="app">
+<header>
+  <h1>Catalog Ads Explorer</h1><span class="badge">Confect</span><span class="grow"></span>
+  <span id="status2" class="subttl"></span>
+</header>
+<div class="mainrow">
+  <aside id="sidebar">
+    <div class="sbhead"><span>Filters</span><span id="clearAll" class="link">clear all</span></div>
+    <div id="filterList"></div>
+  </aside>
+  <main id="mainpane">
+    <div class="bar">
+      <div class="pick"><span class="lab">Compare by</span><button class="pickbtn" id="cmpBtn"><span id="cmpLab">Design tags</span><small>▾</small></button></div>
+      <div class="pick"><span class="lab">&nbsp;</span><button class="swap" id="swap" title="Swap compare / split">⇄</button></div>
+      <div class="pick"><span class="lab">Then split by</span><button class="pickbtn" id="splBtn"><span id="splLab">— none —</span><small>▾</small></button></div>
+      <div class="pick"><span class="lab">Values</span>
+        <div class="seg"><button id="mPct" class="on">% vs all</button><button id="mPctIn">% within Compare</button><button id="mRaw">Raw</button></div></div>
+      <div class="pick"><span class="lab">min ads</span><input class="num" id="minAds" type="number" value="50"></div>
+      <div class="pick"><span class="lab">min advertisers</span><input class="num" id="minAdv" type="number" value="20"></div>
+      <div class="pick"><span class="lab">Search rows</span><input id="search" placeholder="filter… (price or brand)" title="Filter rows by text. Use ' or ' (with spaces around it) to match either term — e.g. 'price or brand'. A word like 'original' is searched literally."></div>
+    </div>
+    <section><div id="out" class="subttl">Loading…</div></section>
+  </main>
+</div>
+<footer id="foot">
+  <div id="info"></div>
+  <div class="footbar"><div class="applied" id="applied"></div><button class="primary" id="copy">⧉ Copy to Google Sheets</button></div>
+</footer>
+</div>
+
+<div id="modal"><div class="sheet">
+  <h3 id="modalTitle">Compare by</h3>
+  <div class="msearch"><input id="modalSearch" placeholder="Search dimensions (e.g. price, size, funnel)…" autocomplete="off"></div>
+  <div class="body" id="modalBody"></div>
+</div></div>
+<div id="ctx" class="ctx"></div>
+
+<script type="module">
+import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0/+esm';
+const DIMS=[
+ ['funnel','Funnel','Ad',false],['ad_format','Ad format','Ad',true],
+ ['creative_format','Creative format','Ad',true],['targeting','Targeting','Ad',true],
+ ['country','Country','Ad',true],['region','Region','Ad',true],['theme','Ad theme','Ad',true],['month','Month','Ad',false],
+ ['ps_tags','Product set purpose','Product set',true],['ps_included_fields','Product set fields','Product set',true],
+ ['rule_types','Design rule type','Variant',false],['schedule_weeks','Design rule schedule length (weeks)','Variant',false],
+ ['num_designs','Number of designs in variant','Variant',false],['name_tags','Variant name tags','Variant',true],
+ ['product_rule_fields','Design rule fields','Variant',true],
+ ['product_image_size','Product image size in design','Design',true],
+ ['product_placement','Product placement in design','Design',true],['num_product_images','Number of product images in design','Design',false],
+ ['design_tags','Design tags','Design',true],
+ ['industry','Industry','Advertiser',true],['sub_industry','Sub-industry','Advertiser',true],
+ ['shop_type','Shop type','Advertiser',false],['price_level','Price level','Advertiser',false],
+ ['catalog_size','Products in catalog','Advertiser',false],
+ ['feed_richness','Product fields in catalog','Advertiser',false],
+ ['advertiser_size','Advertiser size','Advertiser',false],['campaign_investments','Campaign investments (objectives)','Advertiser',true],
+ ['aov_bucket','AOV bucket ($)','Advertiser',false],['growth','Growth trend','Advertiser',false],
+ ['performance_group','Performance group','Advertiser',false],['dpa_spend_group','Catalog spend share','Advertiser',false],
+];
+const GROUPS=['Ad','Advertiser','Design','Product set','Variant'];            // groups A→Z
+const groupDims=g=>DIMS.filter(d=>d[2]===g).sort((a,b)=>a[1].localeCompare(b[1])); // keys A→Z within a group
+const DMAP=Object.fromEntries(DIMS.map(d=>[d[0],{label:d[1],group:d[2],multi:d[3]}]));
+const METRICS=[
+ ['m0','ROAS','x',true,'rev','sp','sp>=200'],['m6','CPA ($)','money',false,'sp','pur','pur>=25'],
+ ['m1','CTR','rate',true,'clk','impr','impr>=2000'],['m3','CVR','rate',true,'pur','clk','clk>=100'],
+ ['m7','CPC ($)','money',false,'sp','clk','clk>=100'],['m8','CPM ($)','money',false,'sp*1000','impr','impr>=2000'],
+ ['m5','AOV ($)','money',true,'rev','pur','pur>=25'],
+];
+const GLOBAL=`(spend_usd<=0 OR revenue_usd < 100*spend_usd)`;   // drop ROAS>=100 outlier rows
+const NONE='(none)';
+const $=id=>document.getElementById(id); const st=m=>{$('status').textContent=m;$('status2')&&($('status2').textContent=m)};
+let db,conn,loaded=false,cmp='design_tags',spl='',mode='pct',rowsData=[],lastTot={},lastBaseMed={},EX={},focus=null,focusSpl=null,baseline=null;
+const fstate={}; DIMS.forEach(d=>fstate[d[0]]={mode:'include',values:new Set()});  // one persistent filter per dimension
+const dimCtl={};  // sidebar control handles, keyed by column
+
+async function boot(){
+  const B=duckdb.getJsDelivrBundles(),b=await duckdb.selectBundle(B);
+  const u=URL.createObjectURL(new Blob([`importScripts("${b.mainWorker}");`],{type:'text/javascript'}));
+  db=new duckdb.AsyncDuckDB(new duckdb.ConsoleLogger(),new Worker(u)); await db.instantiate(b.mainModule,b.pthreadWorker); URL.revokeObjectURL(u);
+  conn=await db.connect(); st('engine ready — waiting for file');
+  try{const r=await fetch('latest-confect-data.parquet'); if(r.ok) await load(new Uint8Array(await r.arrayBuffer()));}catch(e){}
+}
+$('pickBtn').onclick=()=>$('file').click();
+$('file').onchange=async e=>{const f=e.target.files[0]; if(f){st('loading…'); await load(new Uint8Array(await f.arrayBuffer()));}};
+const drop=$('drop');
+['dragover','dragenter'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('hot');}));
+['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('hot');}));
+drop.addEventListener('drop',async e=>{const f=e.dataTransfer.files[0]; if(f){st('loading…'); await load(new Uint8Array(await f.arrayBuffer()));}});
+async function load(buf){
+  await db.registerFileBuffer('latest-confect-data.parquet',buf);
+  await conn.query(`CREATE OR REPLACE TABLE fact AS SELECT * FROM parquet_scan('latest-confect-data.parquet')`);
+  loaded=true; $('empty').style.display='none'; $('app').style.display='flex';
+  await buildExamples(); buildSidebar(); run();
+}
+/* ---- left filter sidebar: all dimensions, grouped by data source ---- */
+function buildSidebar(){
+  const host=$('filterList'); host.innerHTML='';
+  GROUPS.forEach(g=>{
+    const sec=document.createElement('div'); sec.className='fgroup';
+    const gh=document.createElement('div'); gh.className='fgh'; gh.textContent=g; sec.appendChild(gh);
+    groupDims(g).forEach(d=>sec.appendChild(buildDim(d)));
+    host.appendChild(sec);
+  });
+  $('clearAll').onclick=()=>{ DIMS.forEach(d=>{fstate[d[0]].mode='include';fstate[d[0]].values=new Set();}); Object.values(dimCtl).forEach(c=>c.refresh()); run(); };
+}
+function buildDim(d){
+  const col=d[0]; const wrap=document.createElement('div'); wrap.className='fdim';
+  const hd=document.createElement('div'); hd.className='fdh';
+  const label=document.createElement('span'); label.className='fdlabel'; label.textContent=d[1];
+  const badge=document.createElement('span'); badge.className='fbadge'; badge.style.display='none';
+  const chev=document.createElement('span'); chev.className='chev'; chev.textContent='▾';
+  hd.append(label,badge,chev);
+  const body=document.createElement('div'); body.className='fdbody'; body.style.display='none';
+  const seg=document.createElement('span'); seg.className='fmode';
+  const bIs=document.createElement('button'); bIs.textContent='is'; const bNot=document.createElement('button'); bNot.textContent='is not'; seg.append(bIs,bNot);
+  const fs=document.createElement('input'); fs.className='fs'; fs.placeholder='search values…';
+  const selAll=document.createElement('span'); selAll.className='selall'; selAll.textContent='☑ select all matching';
+  const vals=document.createElement('div'); vals.className='vals';
+  body.append(seg,fs,selAll,vals); wrap.append(hd,body);
+  let filled=false;
+  function updBadge(){ const s=fstate[col]; const n=s.values.size; badge.textContent=n?((s.mode==='exclude'?'not ':'')+n):''; badge.style.display=n?'':'none'; hd.classList.toggle('active',!!n); }
+  async function fill(){ if(filled)return; filled=true; vals.innerHTML='<span class="subttl">loading…</span>';
+    let q; try{ if(d[3]) q=await conn.query(`SELECT DISTINCT trim(t) v FROM (SELECT unnest(string_split(${col}, ',')) t FROM fact) WHERE trim(t)<>'' ORDER BY 1`);
+      else q=await conn.query(`SELECT DISTINCT ${col} v FROM fact WHERE ${col} IS NOT NULL AND ${col}<>'' ORDER BY 1 LIMIT 3000`);}catch(e){vals.innerHTML='err';return;}
+    vals.innerHTML='';
+    const mk=(val,lab)=>{ const l=document.createElement('label'); l.dataset.v=String(lab).toLowerCase();
+      const cb=document.createElement('input'); cb.type='checkbox'; cb.value=String(val); cb.checked=fstate[col].values.has(String(val));
+      cb.onchange=()=>{ if(cb.checked)fstate[col].values.add(cb.value); else fstate[col].values.delete(cb.value); updBadge(); run(); };
+      l.append(cb,document.createTextNode(' '+lab)); vals.appendChild(l); };
+    mk(NONE,'(none / empty)'); q.toArray().forEach(r=>mk(String(r.v),String(r.v))); applySearch(); }
+  function applySearch(){ const s=fs.value.trim().toLowerCase(); [...vals.children].forEach(l=>{ l.style.display=(!s||(l.dataset.v||'').includes(s))?'':'none'; }); }
+  fs.oninput=applySearch;
+  selAll.onclick=()=>{ const s=fs.value.trim().toLowerCase(); [...vals.querySelectorAll('label')].forEach(l=>{ if((!s||(l.dataset.v||'').includes(s))&&l.style.display!=='none'){ const cb=l.querySelector('input'); if(!cb.checked){cb.checked=true;fstate[col].values.add(cb.value);} } }); updBadge(); run(); };
+  function setMode(m){ fstate[col].mode=m; bIs.classList.toggle('on',m==='include'); bNot.classList.toggle('on',m==='exclude'); }
+  bIs.onclick=()=>{setMode('include');run();}; bNot.onclick=()=>{setMode('exclude');run();}; setMode('include');
+  function collapse(){ body.style.display='none'; chev.textContent='▾'; }
+  function reorder(){ const sel=[],rest=[]; [...vals.children].forEach(l=>{const cb=l.querySelector('input'); (cb&&cb.checked?sel:rest).push(l);}); [...sel,...rest].forEach(l=>vals.appendChild(l)); }  // selected to top — only on open
+  async function expand(){ Object.values(dimCtl).forEach(c=>c.collapse&&c.collapse()); await fill(); refresh(); reorder(); body.style.display=''; chev.textContent='▴'; }  // single-open: close the others
+  hd.onclick=async()=>{ if(body.style.display!=='none'){collapse();} else {await expand();} };
+  function refresh(){ setMode(fstate[col].mode); [...vals.querySelectorAll('input')].forEach(cb=>cb.checked=fstate[col].values.has(cb.value)); updBadge(); }
+  dimCtl[col]={refresh,expand,collapse,updBadge};
+  updBadge();
+  return wrap;
+}
+async function buildExamples(){
+  for(const [col,,,multi] of DIMS){ try{
+    let q; if(multi) q=await conn.query(`SELECT trim(t) v, count(*) c FROM (SELECT unnest(string_split(${col}, ',')) t FROM fact) WHERE trim(t)<>'' GROUP BY 1 ORDER BY c DESC LIMIT 5`);
+    else q=await conn.query(`SELECT ${col} v, count(*) c FROM fact WHERE ${col} IS NOT NULL AND ${col}<>'' GROUP BY 1 ORDER BY c DESC LIMIT 5`);
+    EX[col]=q.toArray().map(r=>String(r.v)).join(', ');
+  }catch(e){EX[col]='';} }
+}
+
+/* ---- SQL ---- */
+function grpExpr(col){ const m=DMAP[col];
+  return m.multi?`CASE WHEN trim(t_${col})='' THEN '${NONE}' ELSE trim(t_${col}) END`:`COALESCE(NULLIF("${col}",''),'${NONE}')`; }
+function presenceExpr(col,val){ const v=String(val).replace(/'/g,"''");
+  const has = DMAP[col].multi ? `(', '||COALESCE("${col}",'')||', ') LIKE '%, ${v}, %'` : `"${col}"='${v}'`;
+  return `CASE WHEN ${has} THEN '${v}' ELSE 'no ${v}' END`; }
+function fromClause(cols){ const parts=['fact']; cols.forEach(c=>{ if(DMAP[c].multi) parts.push(`unnest(string_split(CASE WHEN fact."${c}" IS NULL OR fact."${c}"='' THEN '${NONE}' ELSE fact."${c}" END, ',')) AS u_${c}(t_${c})`); }); return parts.join(', '); }
+function valClause(col,val){ const v=String(val).replace(/'/g,"''");   // NULL-safe "row has this value" (handles (none) + multi tokens)
+  if(val===NONE) return DMAP[col].multi?`COALESCE("${col}",'')=''`:`("${col}" IS NULL OR "${col}"='')`;
+  return DMAP[col].multi?`((', '||COALESCE("${col}",'')||', ') LIKE '%, ${v}, %')`:`("${col}" IS NOT DISTINCT FROM '${v}')`; }
+function userWhere(){ const cl=[GLOBAL];
+  for(const col in fstate){ const f=fstate[col]; const sel=[...f.values]; if(!sel.length)continue;
+    const ors='('+sel.map(v=>valClause(col,v)).join(' OR ')+')';
+    cl.push(f.mode==='exclude'?`NOT ${ors}`:ors); } return cl; }
+function medianCTE(fromSQL,whereArr,gexprs){
+  const gsel=gexprs.map((g,i)=>`${g} AS g${i}`).join(', '), graw=gexprs.join(', '), gk=gexprs.map((_,i)=>`g${i}`).join(', '), gk2=gk?gk+', ':'';
+  const rSel=METRICS.map(m=>`CASE WHEN ${m[6]} THEN (${m[4]})*1.0/(${m[5]}) END ${m[0]}`).join(', ');
+  const fSel=METRICS.map(m=>`MEDIAN(${m[0]}) ${m[0]}`).join(', ');
+  const where='WHERE '+whereArr.join(' AND ');
+  const base=`SELECT ${gsel?gsel+', ':''}account_id, SUM(impressions) impr,SUM(clicks) clk,SUM(purchase) pur,SUM(spend_usd) sp,SUM(revenue_usd) rev,COUNT(DISTINCT ad_id) ads FROM ${fromSQL} ${where} GROUP BY ${graw?graw+', ':''}account_id`;
+  return `WITH base AS (${base}), r AS (SELECT ${gk2}ads, ${rSel} FROM base) SELECT ${gk2}COUNT(*) n_adv, SUM(ads) n_ads, ${fSel} FROM r ${gk?'GROUP BY '+gk:''}`;
+}
+function sumsSQL(fromSQL,whereArr,gexprs){
+  const gsel=gexprs.map((g,i)=>`${g} AS g${i}`).join(', '), graw=gexprs.join(', '), gk2=gexprs.length?gexprs.map((_,i)=>`g${i}`).join(', ')+', ':'';
+  return `SELECT ${gsel?gsel+', ':''}SUM(impressions) s_impr, SUM(clicks) s_clk, SUM(purchase) s_pur, SUM(spend_usd) s_sp, SUM(revenue_usd) s_rev, COUNT(DISTINCT ad_id) n_ads, COUNT(DISTINCT account_id) n_adv FROM ${fromSQL} WHERE ${whereArr.join(' AND ')} ${graw?'GROUP BY '+graw:''}`;
+}
+async function run(){
+  if(!loaded) return; st('querying…');
+  const axisExpr=(col,foc)=>foc!=null?presenceExpr(col,foc):grpExpr(col);
+  const needsUnnest=(col,foc)=>foc==null&&DMAP[col].multi;
+  const unnestCols=[]; const g0expr=axisExpr(cmp,focus); if(needsUnnest(cmp,focus))unnestCols.push(cmp);
+  const gExprs=[g0expr];
+  if(spl){ const g1expr=axisExpr(spl,focusSpl); if(needsUnnest(spl,focusSpl))unnestCols.push(spl); gExprs.push(g1expr); }
+  const from=fromClause(unnestCols);
+  const parentFrom=fromClause(needsUnnest(cmp,focus)?[cmp]:[]), parentG=[g0expr];
+  const wh=userWhere();
+  let med,sums,tot={};
+  try{
+    med=(await conn.query(medianCTE(from,wh,gExprs))).toArray();
+    sums=(await conn.query(sumsSQL(from,wh,gExprs))).toArray();
+    // pooled parent sums, per compare-by group (for % within compare)
+    const pRows=(await conn.query(sumsSQL(parentFrom,wh,parentG))).toArray();
+    parentPool={}; pRows.forEach(r=>parentPool[String(r.g0)]={sp:Number(r.s_sp),rev:Number(r.s_rev),impr:Number(r.s_impr),clk:Number(r.s_clk),pur:Number(r.s_pur)});
+    // study totals (plain fact) + overall MEDIAN baseline (for % vs all, consistent with Raw)
+    const t=(await conn.query(sumsSQL('fact',wh,[]))).toArray()[0];
+    tot={ads:Number(t.n_ads),adv:Number(t.n_adv),sp:Number(t.s_sp),rev:Number(t.s_rev),impr:Number(t.s_impr),clk:Number(t.s_clk),pur:Number(t.s_pur)};
+    const bMed=(await conn.query(medianCTE('fact',wh,[]))).toArray()[0];
+    lastBaseMed={}; METRICS.forEach(m=>lastBaseMed[m[0]]=(bMed&&bMed[m[0]]!=null)?Number(bMed[m[0]]):null);
+  }catch(e){ st('query error: '+e.message); return; }
+  const skey=r=>String(r.g0)+'|'+(spl?String(r.g1):'');
+  const sm={}; sums.forEach(r=>sm[skey(r)]={sp:Number(r.s_sp),rev:Number(r.s_rev),impr:Number(r.s_impr),clk:Number(r.s_clk),pur:Number(r.s_pur),n_ads:Number(r.n_ads),n_adv:Number(r.n_adv)});
+  rowsData=med.map(r=>{const o={g0:String(r.g0),g1:spl?String(r.g1):null,n_adv:Number(r.n_adv),n_ads:Number(r.n_ads)};METRICS.forEach(m=>o[m[0]]=r[m[0]]==null?null:Number(r[m[0]]));Object.assign(o,sm[skey(r)]||{});return o;});
+  lastTot=tot;
+  // ---- deep-dive combinations: how the focused value performs WITH each other value of the same (multi) dimension
+  comboData=[];
+  if(focus!=null && !spl && DMAP[cmp].multi){
+    try{
+      const cfrom=fromClause([cmp]), cwh=wh.concat([valClause(cmp,focus)]);
+      const cm=(await conn.query(medianCTE(cfrom,cwh,[grpExpr(cmp)]))).toArray();
+      const cs=(await conn.query(sumsSQL(cfrom,cwh,[grpExpr(cmp)]))).toArray();
+      const csm={}; cs.forEach(r=>csm[String(r.g0)]={sp:Number(r.s_sp),rev:Number(r.s_rev),impr:Number(r.s_impr),clk:Number(r.s_clk),pur:Number(r.s_pur)});
+      cm.forEach(r=>{const w=String(r.g0); if(w===focus||w===NONE)return; const o={g0:focus+' + '+w,n_adv:Number(r.n_adv),n_ads:Number(r.n_ads)};METRICS.forEach(m=>o[m[0]]=r[m[0]]==null?null:Number(r[m[0]]));Object.assign(o,csm[w]||{});comboData.push(o);});
+    }catch(e){}
+  }
+  renderInfo(); render(); renderApplied(); st(`${rowsData.length} groups`);
+}
+let parentPool={},lastRendered=[],comboData=[],baseVals=null;
+
+/* ---- render ---- */
+// pooled (spend-weighted) ratio for a metric from a sums object {sp,rev,impr,clk,pur}
+function poolRatio(o,m){ if(!o)return null; const num=m[4]==='sp*1000'?o.sp*1000:o[m[4]]; const den=o[m[5]]; return (den&&den>0&&num!=null)?num/den:null; }
+function dispVal(r,m){
+  if(mode==='raw') return r[m[0]];
+  // baseline — every row's median vs the chosen baseline row's median (baseline row reads 0%)
+  if(mode==='base'){ if(!baseVals)return null; const b=baseVals[m[0]],v=r[m[0]]; return (v==null||b==null||b===0)?null:(v/b-1)*100; }
+  // % vs all — cell MEDIAN vs overall MEDIAN (same statistic as Raw, so the % matches the numbers shown)
+  if(mode==='pct'){ const c=r[m[0]],b=lastBaseMed[m[0]]; return (c==null||b==null||b===0)?null:(c/b-1)*100; }
+  // % within compare — pooled cell vs its compare-by group's pooled total (composes: cells straddle 0)
+  if(!spl) return null; const c=poolRatio(r,m),b=poolRatio(parentPool[r.g0],m); return (c==null||b==null||b===0)?null:(c/b-1)*100;
+}
+function noneLast(a,b){ const an=a===NONE,bn=b===NONE; if(an&&!bn)return 1; if(bn&&!an)return -1; return String(a).localeCompare(String(b),undefined,{numeric:true}); }
+let sortCol=null, sortDir='desc';   // persists across renders/filters until reset (3rd click)
+function sortVal(r,col){ if(col==='g0')return r.g0; if(col==='g1')return r.g1; if(col==='n_ads')return r.n_ads; if(col==='n_adv')return r.n_adv; const m=METRICS.find(x=>x[0]===col); return m?dispVal(r,m):null; }
+function gcmp(x,y,dir){ const an=x===NONE,bn=y===NONE; if(an&&!bn)return 1; if(bn&&!an)return -1; return dir*String(x).localeCompare(String(y),undefined,{numeric:true}); } // (none) always last, alpha follows dir
+function sortRows(rows,g1){
+  if(!sortCol||(sortCol==='g1'&&!g1)){ rows.sort((a,b)=>noneLast(a.g0,b.g0)||(g1?noneLast(a.g1,b.g1):0)); return; }
+  const grp=(sortCol==='g0'||sortCol==='g1'), dir=sortDir==='asc'?1:-1;
+  rows.sort((a,b)=>{ const x=sortVal(a,sortCol),y=sortVal(b,sortCol);
+    if(grp){ const p=gcmp(x,y,dir); if(p!==0||!g1) return p;      // primary text column
+      const other=sortCol==='g0'?'g1':'g0'; return gcmp(a[other],b[other],dir); }  // then the other text column, same direction
+    const xn=(x==null||!isFinite(x)),yn=(y==null||!isFinite(y)); if(xn&&yn)return noneLast(a.g0,b.g0); if(xn)return 1; if(yn)return -1;
+    return dir*(x-y)||noneLast(a.g0,b.g0); });
+}
+function render(){
+  const minAds=+$('minAds').value,minAdv=+$('minAdv').value,g1=!!spl;
+  // resolve the baseline row's metric values (or drop baseline if its row is gone)
+  baseVals=null;
+  if(baseline){ const br=rowsData.find(r=>r.g0===baseline.g0 && String(r.g1)===String(baseline.g1));
+    if(br){ baseVals={}; METRICS.forEach(m=>baseVals[m[0]]=br[m[0]]); }
+    else { baseline=null; if(mode==='base')mode='raw'; } }
+  if(mode==='base')['mRaw','mPct','mPctIn'].forEach(id=>$(id).classList.remove('on'));  // no seg button reflects baseline mode
+  let rows=rowsData.filter(r=>r.n_ads>=minAds&&r.n_adv>=minAdv);
+  sortRows(rows,g1);
+  // color scale
+  const scales=METRICS.map(m=>{ if(mode!=='raw')return null; const vs=rows.map(r=>{const v=r[m[0]];return v==null?null:(m[3]?v:-v);}).filter(v=>v!=null&&isFinite(v));return{min:Math.min(...vs),max:Math.max(...vs)};});
+  let h='<table><thead><tr>';
+  const arr=c=>sortCol===c?`<span class="sarr">${sortDir==='asc'?'▲':'▼'}</span>`:'';
+  h+=`<th class="grp" data-col="g0">${DMAP[cmp].label}${arr('g0')}</th>`; if(g1)h+=`<th class="grp" data-col="g1">${DMAP[spl].label}${arr('g1')}</th>`;
+  METRICS.forEach(m=>h+=`<th data-col="${m[0]}">${m[1]}${arr(m[0])}</th>`); h+=`<th data-col="n_ads" style="color:var(--mut)">ads${arr('n_ads')}</th><th data-col="n_adv" style="color:var(--mut)">advertisers${arr('n_adv')}</th></tr></thead><tbody>`;
+  const clickable=(focus==null), clickable1=(g1&&focusSpl==null);
+  const act=(col,v,axis)=>` class="grp act" data-cmc="${col}" data-cmv="${encodeURIComponent(v)}" data-axis="${axis}" title="Click for options: deep dive, keep, exclude"`;
+  lastRendered=rows;
+  const body=rows.map((r,ri)=>{const isBase=baseline&&r.g0===baseline.g0&&String(r.g1)===String(baseline.g1); let tr=`<tr data-ri="${ri}"${isBase?' class="baserow"':''}>`; tr+=`<td${clickable?act(cmp,r.g0,'cmp'):' class="grp"'}>${esc(r.g0)}</td>`; if(g1)tr+=`<td${clickable1?act(spl,r.g1,'spl'):' class="grp"'}>${esc(r.g1)}</td>`;
+    METRICS.forEach((m,i)=>{const dv=dispVal(r,m); const score=dv==null?null:(m[3]?dv:-dv);
+      const bg = mode==='raw'?colorRaw(score,scales[i]):colorDiv(score);
+      tr+=`<td style="background:${bg}">${mode==='raw'?fmt(r[m[0]],m[2]):fmtPct(dv)}</td>`;});
+    tr+=`<td style="color:var(--mut)">${(r.n_ads||0).toLocaleString()}</td><td style="color:var(--mut)">${(r.n_adv||0).toLocaleString()}</td></tr>`;
+    return {g0:r.g0,g1:r.g1,html:tr};});
+  h+=body.map(b=>b.html).join('')+'</tbody></table>';
+  if(!rows.length)h='<p class="subttl">No groups meet the thresholds (min ads / advertisers).</p>';
+  let banner='';
+  if(baseline) banner+=`<div class="focusbar">Baseline: <b>${esc(baseline.g0)}${baseline.g1?(' / '+esc(baseline.g1)):''}</b> — every metric shown as % vs this row (baseline reads 0%) <span class="link" id="clearBase">✕ clear</span></div>`;
+  if(focus!=null) banner+=`<div class="focusbar">Compare-by <b>${esc(DMAP[cmp].label)}</b>: <b>${esc(focus)}</b> vs <b>no ${esc(focus)}</b> <span class="link" id="clearFocus">✕ back to all values</span></div>`;
+  if(focusSpl!=null) banner+=`<div class="focusbar">Split-by <b>${esc(DMAP[spl].label)}</b>: <b>${esc(focusSpl)}</b> vs <b>no ${esc(focusSpl)}</b> <span class="link" id="clearFocusSpl">✕ back to all values</span></div>`;
+  // deep-dive combinations table (visually separated)
+  let comboHtml='';
+  if(comboData.length){
+    let crows=comboData.filter(r=>r.n_ads>=minAds&&r.n_adv>=minAdv); sortRows(crows,false);   // mirror the main table's sort
+    if(crows.length){
+      const cscales=METRICS.map(m=>{ if(mode!=='raw')return null; const vs=crows.map(r=>{const v=r[m[0]];return v==null?null:(m[3]?v:-v);}).filter(v=>v!=null&&isFinite(v));return{min:Math.min(...vs),max:Math.max(...vs)};});
+      let ch='<table><thead><tr><th class="grp">Combination</th>';
+      METRICS.forEach(m=>ch+=`<th>${m[1]}</th>`); ch+='<th style="color:var(--mut)">ads</th><th style="color:var(--mut)">advertisers</th></tr></thead><tbody>';
+      crows.forEach(r=>{ch+='<tr><td class="grp">'+esc(r.g0)+'</td>';
+        METRICS.forEach((m,i)=>{const dv=dispVal(r,m),score=dv==null?null:(m[3]?dv:-dv),bg=mode==='raw'?colorRaw(score,cscales[i]):colorDiv(score);ch+=`<td style="background:${bg}">${mode==='raw'?fmt(r[m[0]],m[2]):fmtPct(dv)}</td>`;});
+        ch+=`<td style="color:var(--mut)">${(r.n_ads||0).toLocaleString()}</td><td style="color:var(--mut)">${(r.n_adv||0).toLocaleString()}</td></tr>`;});
+      ch+='</tbody></table>';
+      comboHtml=`<div class="combosep"></div><div class="subttl" style="margin:2px 0 8px"><b>Combinations with “${esc(focus)}”</b> — how ${esc(focus)} performs together with each other ${esc(DMAP[cmp].label)} value</div>`+ch;
+    }
+  }
+  $('out').innerHTML=banner+h+comboHtml;
+  if(baseline) $('clearBase').onclick=()=>{setMode('raw');};
+  if(focus!=null) $('clearFocus').onclick=()=>{focus=null;run();};
+  if(focusSpl!=null) $('clearFocusSpl').onclick=()=>{focusSpl=null;run();};
+  wireTable(); filterRows();
+}
+function colorRaw(score,sc){ if(score==null||!isFinite(score)||!sc||!isFinite(sc.min)||sc.max===sc.min)return 'transparent'; const t=Math.max(0,Math.min(1,(score-sc.min)/(sc.max-sc.min))); return `hsla(${120*t},62%,47%,.30)`; }
+function colorDiv(score){ if(score==null||!isFinite(score))return 'transparent'; const t=Math.max(-1,Math.min(1,score/40)); return t>=0?`hsla(140,60%,45%,${(t*0.55).toFixed(3)})`:`hsla(6,72%,52%,${(-t*0.55).toFixed(3)})`; }
+function fmt(v,k){ if(v==null||!isFinite(v))return '—'; if(k==='rate')return(v*100).toFixed(2)+'%'; if(k==='money')return '$'+v.toFixed(2); return v.toFixed(2); }
+function fmtPct(v){ if(v==null||!isFinite(v))return '—'; return (v>=0?'+':'')+v.toFixed(1)+'%'; }
+function esc(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+function renderInfo(){const t=lastTot||{},f=n=>n==null?'—':Number(n).toLocaleString(),money=n=>n==null?'—':'$'+Math.round(n).toLocaleString();
+  $('info').innerHTML=[['Ads',f(t.ads)],['Advertisers',f(t.adv)],['Spend',money(t.sp)],['Revenue',money(t.rev)],['Impressions',f(t.impr)],['Clicks',f(t.clk)],['Purchases',f(t.pur)]].map(k=>`<div class="kpi"><b>${k[1]}</b><span>${k[0]}</span></div>`).join('');}
+const TIPTEXT='<b>Tip:</b> click any row value for options — deep dive (present vs absent), keep only, exclude, or set as metric baseline.';
+function modeNote(){ if(mode==='base')return `<b>Baseline mode:</b> every metric is shown as % vs the chosen baseline row (<b>${esc(baseline?baseline.g0:'')}</b>), which reads 0%. Uses the same median values as Raw. Clear it to return to Raw.`;
+  return mode==='pct'?'<b>% vs all:</b> each cell’s median vs the overall median for these filters — same statistic as Raw, so the % matches the raw numbers. Green = better, red = worse.':(mode==='pctin'?`<b>% within compare:</b> spend-weighted — each cell vs its <b>${esc(DMAP[cmp].label)}</b> group’s pooled total; cells within a group straddle 0 (weighted by spend, so may differ from Raw medians).`:'<b>Raw</b> = median across advertisers (the typical advertiser, robust to outliers).'); }
+function renderApplied(){const fl=DIMS.map(d=>{const s=[...fstate[d[0]].values];return s.length?`${d[1]} ${fstate[d[0]].mode==='exclude'?'∉':'∈'} {${s.join(', ')}}`:null;}).filter(Boolean);
+  const meth=mode==='raw'?'median across advertisers':mode==='pct'?'median across advertisers (vs overall median)':mode==='pctin'?'spend-weighted (pooled, vs compare-by group)':mode==='base'?`% vs baseline row “${esc(baseline?baseline.g0:'')}”`:'';
+  $('applied').innerHTML=`<b>Study:</b> compare by <b>${DMAP[cmp].label}</b>${spl?` split by <b>${DMAP[spl].label}</b>`:''} · ${meth} · ROAS≥100 rows excluded · ${fl.length?('filters — '+fl.join(' · ')):'no filters'} <span class="link" id="copyCfg">⧉ Copy current filters</span> · <span class="link" id="learnMore">ⓘ Learn more</span><div id="helpbox" style="display:none;margin-top:6px;line-height:1.6">${TIPTEXT}<br>${modeNote()}</div>`;
+  $('copyCfg').onclick=copyCfg;
+  $('learnMore').onclick=()=>{const h=$('helpbox');h.style.display=h.style.display==='none'?'block':'none';};}
+
+/* ---- table interactions: sort any column, hover highlight, search reorder ---- */
+function wireTable(){
+  const table=$('out').querySelector('table'); if(!table)return;
+  [...table.tHead.rows[0].cells].forEach(th=>th.onclick=()=>{const c=th.dataset.col; if(!c)return;
+    if(sortCol!==c){sortCol=c;sortDir='desc';} else if(sortDir==='desc'){sortDir='asc';} else {sortCol=null;} render();});
+  const tb=table.tBodies[0];
+  const openMenu=e=>{const td=e.target.closest('td[data-cmc]'); if(!td)return; e.preventDefault(); e.stopPropagation(); const tr=td.closest('tr'); showCtx(e.pageX,e.pageY,td.dataset.cmc,decodeURIComponent(td.dataset.cmv),td.dataset.axis,tr?+tr.dataset.ri:-1);};
+  table.addEventListener('click',openMenu);
+  table.addEventListener('contextmenu',openMenu);
+  table.addEventListener('mousemove',e=>{const td=e.target.closest('td');clearHL(tb);if(!td||td.parentElement.classList.contains('spacer'))return;const ci=td.cellIndex;td.parentElement.classList.add('hlrow');[...tb.rows].forEach(r=>{if(!r.classList.contains('spacer'))r.cells[ci]&&r.cells[ci].classList.add('hlcol');});});
+  table.addEventListener('mouseleave',()=>clearHL(tb));
+}
+function clearHL(tb){[...tb.querySelectorAll('.hlcol')].forEach(c=>c.classList.remove('hlcol'));[...tb.querySelectorAll('.hlrow')].forEach(c=>c.classList.remove('hlrow'));}
+function showCtx(x,y,col,val,axis,ri){ const m=$('ctx'); const disp=val;
+  m.innerHTML=`<div class="ci hd">${esc(DMAP[col].label)}: <b>${esc(disp)}</b></div>`+
+    `<div class="ci" data-a="dive">🔍 Deep dive into “${esc(disp)}” (vs the rest)</div>`+
+    `<div class="ci" data-a="keep">✓ Keep only “${esc(disp)}”</div>`+
+    `<div class="ci" data-a="excl">✕ Exclude “${esc(disp)}”</div>`+
+    `<div class="ci" data-a="base">📊 Use “${esc(disp)}” as metric baseline</div>`+
+    `<div class="ci" data-a="copy">⧉ Copy row to Google Sheets</div>`;
+  m.style.display='block'; const w=m.offsetWidth,h=m.offsetHeight;
+  m.style.left=Math.min(x,innerWidth-w-8)+'px'; m.style.top=Math.min(y,innerHeight+scrollY-h-8)+'px';
+  m.querySelector('[data-a=dive]').onclick=()=>{hideCtx(); if(axis==='spl')focusSpl=disp; else focus=disp; run();};
+  m.querySelector('[data-a=keep]').onclick=()=>{hideCtx(); const s=fstate[col]; s.mode='include'; s.values=new Set([disp]); dimCtl[col]&&dimCtl[col].expand(); run();};
+  m.querySelector('[data-a=excl]').onclick=()=>{hideCtx(); const s=fstate[col]; s.mode='exclude'; s.values.add(disp); dimCtl[col]&&dimCtl[col].expand(); run();};
+  m.querySelector('[data-a=base]').onclick=()=>{hideCtx(); const r=lastRendered[ri]; if(!r)return; baseline={g0:r.g0,g1:r.g1}; mode='base'; render();};
+  m.querySelector('[data-a=copy]').onclick=()=>{hideCtx(); copyRow(ri);};
+}
+function copyRow(i){ const r=lastRendered[i]; if(!r)return; const g1=!!spl;
+  const head=[DMAP[cmp].label]; if(g1)head.push(DMAP[spl].label);
+  METRICS.forEach(m=>head.push(m[1]+(mode==='raw'?'':' %Δ')));
+  head.push('ads','advertisers','spend_usd','revenue_usd','impressions','clicks','purchases');
+  const row=[r.g0]; if(g1)row.push(r.g1);
+  METRICS.forEach(m=>{ if(mode==='raw'){const v=r[m[0]];row.push(v==null?'':(m[2]==='rate'?(v*100).toFixed(3)+'%':v.toFixed(4)));} else {const p=dispVal(r,m);row.push(p==null?'':p.toFixed(2)+'%');} });
+  row.push(r.n_ads,r.n_adv,Math.round(r.sp||0),Math.round(r.rev||0),r.impr||0,r.clk||0,r.pur||0);
+  navigator.clipboard.writeText(head.join('\t')+'\n'+row.join('\t')).then(()=>st('row copied to clipboard'));
+}
+function hideCtx(){const m=$('ctx');if(m)m.style.display='none';}
+document.addEventListener('click',hideCtx); window.addEventListener('resize',hideCtx);
+function filterRows(){
+  const q=$('search').value.trim().toLowerCase(); const table=$('out').querySelector('table'); if(!table)return; const tb=table.tBodies[0];
+  const rows=[...tb.rows].filter(r=>!r.classList.contains('spacer')); tb.querySelectorAll('.spacer').forEach(s=>s.remove());
+  if(!q){rows.forEach(r=>{r.style.display='';tb.appendChild(r);});return;}
+  const terms=q.split(/\s+or\s+/).map(t=>t.trim()).filter(Boolean);   // " or " (with spaces) = OR; "original" is untouched
+  const match=[],rest=[]; rows.forEach(r=>{const t=(r.cells[0].innerText+' '+(r.cells[1]?.innerText||'')).toLowerCase();(terms.some(term=>t.includes(term))?match:rest).push(r);});
+  match.forEach(r=>{r.style.display='';tb.appendChild(r);});
+  if(match.length&&rest.length){const sp=document.createElement('tr');sp.className='spacer';sp.innerHTML=`<td colspan="99"></td>`;tb.appendChild(sp);}
+  rest.forEach(r=>{r.style.display='';tb.appendChild(r);});
+}
+
+/* ---- modal ---- */
+let modalTarget='cmp';
+function openModal(t){modalTarget=t;$('modalTitle').textContent=t==='cmp'?'Compare by':'Then split by';$('modalSearch').value='';drawModal('');$('modal').classList.add('open');$('modalSearch').focus();}
+function drawModal(q){q=(q||'').toLowerCase();const body=$('modalBody');body.innerHTML='';
+  if(modalTarget==='spl'){const d=document.createElement('div');d.className='mo';d.innerHTML='<div class="t">— none —</div>';d.onclick=()=>{spl='';$('splLab').textContent='— none —';focusSpl=null;close();run();};body.appendChild(d);}
+  GROUPS.forEach(g=>{const items=groupDims(g).filter(d=>(d[1].toLowerCase().includes(q)||g.toLowerCase().includes(q)||(EX[d[0]]||'').toLowerCase().includes(q)));if(!items.length)return;
+    const gh=document.createElement('div');gh.className='gh';gh.textContent=g;body.appendChild(gh);
+    items.forEach(d=>{const o=document.createElement('div');o.className='mo';o.innerHTML=`<div class="t">${d[1]}</div><div class="ex">${EX[d[0]]?('e.g. '+esc(EX[d[0]])):''}</div>`;
+      o.onclick=()=>{if(modalTarget==='cmp'){cmp=d[0];$('cmpLab').textContent=d[1];focus=null;}else{spl=d[0];$('splLab').textContent=d[1];focusSpl=null;}close();run();};body.appendChild(o);});});}
+function close(){$('modal').classList.remove('open');}
+$('cmpBtn').onclick=()=>openModal('cmp');$('splBtn').onclick=()=>openModal('spl');
+$('modalSearch').oninput=e=>drawModal(e.target.value);$('modal').onclick=e=>{if(e.target.id==='modal')close();};
+function swap(){if(!spl)return;const a=cmp;cmp=spl;spl=a;const f=focus;focus=focusSpl;focusSpl=f;$('cmpLab').textContent=DMAP[cmp].label;$('splLab').textContent=DMAP[spl].label;run();}
+$('swap').onclick=swap;
+
+/* ---- controls ---- */
+function setMode(m){baseline=null;mode=m;['mRaw','mPct','mPctIn'].forEach(id=>$(id).classList.remove('on'));$({raw:'mRaw',pct:'mPct',pctin:'mPctIn'}[m]).classList.add('on');render();}
+$('mRaw').onclick=()=>setMode('raw');$('mPct').onclick=()=>setMode('pct');$('mPctIn').onclick=()=>setMode('pctin');
+['minAds','minAdv'].forEach(id=>$(id).addEventListener('change',render));
+$('search').oninput=filterRows;
+
+/* ---- copy ---- */
+function copyCfg(){const cfg={compareBy:DMAP[cmp].label,splitBy:spl?DMAP[spl].label:null,values:mode,minAds:+$('minAds').value,minAdvertisers:+$('minAdv').value,filters:DIMS.filter(d=>fstate[d[0]].values.size).map(d=>({dim:d[1],mode:fstate[d[0]].mode,values:[...fstate[d[0]].values]}))};navigator.clipboard.writeText(JSON.stringify(cfg,null,2)).then(()=>{const e=$('copyCfg'),o=e.textContent;e.textContent='✓ Copied';setTimeout(()=>e.textContent=o,1400);});}
+function copySheets(){
+  if(!rowsData.length)return;const minAds=+$('minAds').value,minAdv=+$('minAdv').value,g1=!!spl;
+  const rows=rowsData.filter(r=>r.n_ads>=minAds&&r.n_adv>=minAdv).sort((a,b)=>noneLast(a.g0,b.g0)||(g1?noneLast(a.g1,b.g1):0));
+  const L=[];
+  L.push(`Catalog Ads Explorer — compare by ${DMAP[cmp].label}${g1?' split by '+DMAP[spl].label:''} — ${({raw:'raw',pct:'% vs all',pctin:'% within compare',base:'% vs baseline'})[mode]||mode} (${mode==='pctin'?'spend-weighted / pooled':'median across advertisers'}; ROAS≥100 rows excluded)`);
+  const fl=DIMS.filter(d=>fstate[d[0]].values.size).map(d=>`${d[1]}${fstate[d[0]].mode==='exclude'?' (exclude)':''}: ${[...fstate[d[0]].values].join('|')}`);
+  L.push('Filters: '+(fl.length?fl.join(' ; '):'none'));
+  const t=lastTot;L.push(`Study totals\tads\t${t.ads}\tadvertisers\t${t.adv}\tspend_usd\t${Math.round(t.sp)}\trevenue_usd\t${Math.round(t.rev)}\timpressions\t${t.impr}\tclicks\t${t.clk}\tpurchases\t${t.pur}`);L.push('');
+  const head=[DMAP[cmp].label];if(g1)head.push(DMAP[spl].label);
+  METRICS.forEach(m=>head.push(m[1]+(mode==='raw'?'':' %Δ')));
+  head.push('ads','advertisers','spend_usd','revenue_usd','impressions','clicks','purchases');
+  L.push(head.join('\t'));
+  rows.forEach(r=>{const row=[r.g0];if(g1)row.push(r.g1);
+    METRICS.forEach(m=>{if(mode==='raw'){const v=r[m[0]];row.push(v==null?'':(m[2]==='rate'?(v*100).toFixed(3)+'%':v.toFixed(4)));}else{const p=dispVal(r,m);row.push(p==null?'':p.toFixed(2)+'%');}});
+    row.push(r.n_ads,r.n_adv,Math.round(r.sp||0),Math.round(r.rev||0),r.impr||0,r.clk||0,r.pur||0);L.push(row.join('\t'));});
+  navigator.clipboard.writeText(L.join('\n')).then(()=>{const b=$('copy'),o=b.textContent;b.textContent='✓ Copied';setTimeout(()=>b.textContent=o,1500);});
+}
+$('copy').onclick=copySheets;
+boot();
+</script>
+</body>
+</html>
