@@ -98,6 +98,11 @@
   .ctx .ci.hd .dd{font-weight:400;color:var(--ink);margin-top:3px;white-space:normal}
   .ctx .ci.hd{max-width:300px;white-space:normal}
   .conc{color:#b45309;cursor:help;font-size:12px}
+  .prow{display:flex;align-items:flex-start;gap:8px;padding:6px 2px;cursor:pointer;border-radius:6px}
+  .prow:hover{background:var(--panel)} .prow input{margin-top:3px}
+  .psec{font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin:12px 0 4px}
+  .pnote{color:var(--mut);font-size:11.5px;margin-top:1px}
+  .prow.pbad{opacity:.55}
   .ctx{position:absolute;z-index:60;background:#fff;border:1px solid var(--edge);border-radius:10px;box-shadow:0 12px 34px rgba(0,0,0,.18);display:none;overflow:hidden;min-width:210px}
   .ctx .ci{padding:9px 14px;cursor:pointer;font-size:13px}
   .ctx .ci:hover{background:var(--accent2)}
@@ -154,10 +159,10 @@
   <div class="msearch"><input id="modalSearch" placeholder="Search dimensions (e.g. price, size, funnel)…" autocomplete="off"></div>
   <div class="body" id="modalBody"></div>
 </div></div>
-<div id="pmodal"><div class="sheet" style="width:min(560px,94vw)">
-  <h3 id="pmodalTitle">Filters applied</h3>
-  <div class="body" id="pmodalBody" style="padding:14px 18px"></div>
-  <div style="padding:12px 18px;text-align:right;border-top:1px solid var(--edge)"><button class="primary" id="pmodalOk">Got it</button></div>
+<div id="pmodal"><div class="sheet" style="width:min(580px,94vw)">
+  <h3 id="pmodalTitle">Apply filters</h3>
+  <div class="body" id="pmodalBody" style="padding:12px 18px;max-height:60vh;overflow:auto"></div>
+  <div style="padding:12px 18px;text-align:right;border-top:1px solid var(--edge)"><button id="pmodalCancel">Cancel</button> <button class="primary" id="pmodalOk">Apply selected</button></div>
 </div></div>
 <div id="ctx" class="ctx"></div>
 
@@ -587,13 +592,31 @@ function applyConfig(cfg){
   run();
   return {set,unknown};
 }
-function showPasteResult(res){
-  const rows=res.set.map(s=>`<div style="padding:2px 0"><b>${esc(DMAP[s.col].label)}</b> ${s.mode==='exclude'?'is not':'is'} {${s.values.map(esc).join(', ')}}</div>`).join('');
-  const unk=res.unknown.filter(Boolean).length?`<div style="color:#b45309;margin-top:8px">Ignored (unknown dimension): ${res.unknown.filter(Boolean).map(esc).join(', ')}</div>`:'';
-  $('pmodalBody').innerHTML=(res.set.length?`<div style="margin-bottom:6px">✓ Applied <b>${res.set.length}</b> filter${res.set.length>1?'s':''}:</div>${rows}`:'No filters found in the pasted JSON.')+unk;
-  $('pmodal').classList.add('open');
+// interactive picker: core filters (checked) + suggestions (unchecked), user toggles then applies
+let pendingCfg=null;
+function fList(cfg){ return Array.isArray(cfg)?cfg:(cfg.filters||[]); }
+function sList(cfg){ return (!Array.isArray(cfg)&&Array.isArray(cfg.suggestions))?cfg.suggestions:[]; }
+function pickRow(f,idx,kind,checked){ const col=labelToCol(f.dim||f.dimension||f.col); const ok=!!col;
+  const lbl=ok?DMAP[col].label:(f.dim||f.dimension||f.col||'?');
+  const vals=(Array.isArray(f.values)?f.values:(f.value!=null?[f.value]:[])).map(esc).join(', ');
+  const note=f.note?`<div class="pnote">${esc(f.note)}</div>`:'';
+  return `<label class="prow${ok?'':' pbad'}"><input type="checkbox" data-kind="${kind}" data-idx="${idx}" ${checked&&ok?'checked':''} ${ok?'':'disabled'}><span><b>${esc(lbl)}</b> ${f.mode==='exclude'?'is not':'is'} {${vals}}${ok?'':' — unknown dimension'}${note}</span></label>`; }
+function openFilterPicker(cfg){ pendingCfg=cfg; const core=fList(cfg), sugg=sList(cfg);
+  let html='';
+  if(core.length) html+=`<div class="psec">Filters</div>`+core.map((f,i)=>pickRow(f,i,'core',true)).join('');
+  if(sugg.length) html+=`<div class="psec">Suggestions — optional</div>`+sugg.map((f,i)=>pickRow(f,i,'sugg',false)).join('');
+  if(!core.length&&!sugg.length) html='<div class="subttl">No filters found in the pasted JSON.</div>';
+  if(!Array.isArray(cfg)&&(cfg.compareBy||cfg.values)) html+=`<div class="pnote" style="margin-top:12px">Also sets analysis: ${cfg.compareBy?('compare by <b>'+esc(cfg.compareBy)+'</b>'):''}${cfg.values?(' · '+esc({raw:'Raw',pct:'% vs all',pctin:'% within compare'}[cfg.values]||cfg.values)):''}</div>`;
+  $('pmodalBody').innerHTML=html; $('pmodal').classList.add('open');
 }
-$('pmodalOk').onclick=()=>$('pmodal').classList.remove('open');
+function applyPicked(){ const cfg=pendingCfg; $('pmodal').classList.remove('open'); if(!cfg)return;
+  const core=fList(cfg), sugg=sList(cfg), picked=[];
+  $('pmodalBody').querySelectorAll('input[type=checkbox]:checked').forEach(cb=>{ const f=(cb.dataset.kind==='core'?core:sugg)[+cb.dataset.idx]; if(f)picked.push(f); });
+  const applyCfg=Array.isArray(cfg)?picked:Object.assign({},cfg,{filters:picked,suggestions:undefined});
+  const res=applyConfig(applyCfg); st(`${res.set.length} filter${res.set.length===1?'':'s'} applied`);
+}
+$('pmodalOk').onclick=applyPicked;
+$('pmodalCancel').onclick=()=>{$('pmodal').classList.remove('open');};
 $('pmodal').onclick=e=>{if(e.target.id==='pmodal')$('pmodal').classList.remove('open');};
 document.addEventListener('paste',e=>{
   const ae=document.activeElement; if(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))return;   // don't hijack pasting into a field
@@ -602,7 +625,7 @@ document.addEventListener('paste',e=>{
   if(!(Array.isArray(cfg)||(cfg&&typeof cfg==='object'&&Array.isArray(cfg.filters))))return;   // not a filter JSON — ignore
   e.preventDefault();
   if(!loaded){st('load a dataset first, then paste filters');return;}
-  showPasteResult(applyConfig(cfg));
+  openFilterPicker(cfg);
 });
 
 /* ---- copy ---- */
