@@ -403,11 +403,11 @@ function render(){
   const gattr=(col,v,clk,axis)=>clk?act(col,v,axis):` class="grp"${valDesc(col,v)?` title="${escA(valDesc(col,v))}"`:''}`;
   lastRendered=rows;
   const warnFor=r=>{const cs=conc[r.g0+'|'+(g1?r.g1:'')]; return (cs!=null&&cs>0.34)?` <span class="conc" title="One advertiser is ${Math.round(cs*100)}% of the ads in this row — thin or concentrated, read with caution">⚠</span>`:'';};
-  const body=rows.map((r,ri)=>{const isBase=baseline&&r.g0===baseline.g0&&String(r.g1)===String(baseline.g1); const w=warnFor(r); let tr=`<tr data-ri="${ri}"${isBase?' class="baserow"':''}>`; tr+=`<td${gattr(cmp,r.g0,clickable,'cmp')}>${esc(r.g0)}${g1?'':w}</td>`; if(g1)tr+=`<td${gattr(spl,r.g1,clickable1,'spl')}>${esc(r.g1)}${w}</td>`;
+  const body=rows.map((r,ri)=>{const isBase=baseline&&r.g0===baseline.g0&&String(r.g1)===String(baseline.g1); const w=warnFor(r); let tr=`<tr data-ri="${ri}"${isBase?' class="baserow"':''}>`; tr+=`<td${gattr(cmp,r.g0,clickable,'cmp')}>${esc(r.g0)}</td>`; if(g1)tr+=`<td${gattr(spl,r.g1,clickable1,'spl')}>${esc(r.g1)}</td>`;
     METRICS.forEach((m,i)=>{const dv=dispVal(r,m); const score=dv==null?null:(m[3]?dv:-dv);
       const bg = mode==='raw'?colorRaw(score,scales[i]):colorDiv(score);
       tr+=`<td style="background:${bg}">${mode==='raw'?fmt(r[m[0]],m[2]):fmtPct(dv)}</td>`;});
-    tr+=`<td style="color:var(--mut)">${(r.n_ads||0).toLocaleString()}</td><td style="color:var(--mut)">${(r.n_adv||0).toLocaleString()}</td></tr>`;
+    tr+=`<td style="color:var(--mut)">${(r.n_ads||0).toLocaleString()}${w}</td><td style="color:var(--mut)">${(r.n_adv||0).toLocaleString()}</td></tr>`;
     return {g0:r.g0,g1:r.g1,html:tr};});
   h+=body.map(b=>b.html).join('')+'</tbody></table>';
   if(!rows.length)h='<p class="subttl">No groups meet the thresholds (min ads / advertisers).</p>';
