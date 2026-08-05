@@ -55,7 +55,8 @@
   .fchip input.fs{width:100%;padding:5px 7px;border:1px solid var(--edge);border-radius:6px;margin-bottom:4px}
   .fchip .selall{font-size:11px;color:var(--accent);cursor:pointer;display:block;margin-bottom:4px}
   .fchip .vals{max-height:150px;overflow:auto}.fchip .vals label{display:block;padding:1px 0}
-  section{padding:16px 20px 24px;overflow:auto}
+  section{padding:0 20px 24px;overflow:auto}
+  #out{padding-top:16px}
   table{border-collapse:separate;border-spacing:0;width:100%;font-size:13px;background:#fff}
   th,td{padding:9px 11px;border-bottom:1px solid var(--edge);white-space:nowrap}
   th{position:sticky;top:0;background:#fff;color:var(--mut);font-weight:600;text-align:right;cursor:pointer;user-select:none}
@@ -97,7 +98,6 @@
   .mo .t{font-weight:600}.mo .ex{color:var(--mut);font-size:11.5px}.mo .dsc{color:var(--ink);font-size:12px;margin:2px 0}
   .ctx .ci.hd .dd{font-weight:400;color:var(--ink);margin-top:3px;white-space:normal}
   .ctx .ci.hd{max-width:300px;white-space:normal}
-  .conc{color:#b45309;cursor:help;font-size:12px}
   .prow{display:flex;align-items:flex-start;gap:8px;padding:6px 2px;cursor:pointer;border-radius:6px}
   .prow:hover{background:var(--panel)} .prow input{margin-top:3px}
   .psec{font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin:12px 0 4px}
@@ -320,13 +320,6 @@ function totalsSQL(whereArr){
   const where='WHERE '+whereArr.join(' AND ');
   return `WITH perad AS (SELECT account_id, ad_id, SUM(impressions) impr,SUM(clicks) clk,SUM(purchase) pur,SUM(spend_usd) sp,SUM(revenue_usd) rev FROM fact ${where} GROUP BY account_id, ad_id HAVING SUM(spend_usd)>=${FLOOR}) SELECT COUNT(*) n_ads, COUNT(DISTINCT account_id) n_adv, SUM(sp) s_sp, SUM(rev) s_rev, SUM(impr) s_impr, SUM(clk) s_clk, SUM(pur) s_pur FROM perad`;
 }
-// per-cell concentration: largest single advertiser's share of the ads in the cell (ad-count, not spend)
-function concSQL(fromSQL,whereArr,gexprs){
-  const gsel=gexprs.map((g,i)=>`${g} AS g${i}`).join(', '), graw=gexprs.join(', '), gk=gexprs.map((_,i)=>`g${i}`).join(', ');
-  const where='WHERE '+whereArr.join(' AND ');
-  const inner=`SELECT ${gsel?gsel+', ':''}account_id, ad_id FROM ${fromSQL} ${where} GROUP BY ${graw?graw+', ':''}account_id, ad_id HAVING SUM(spend_usd)>=${FLOOR}`;
-  return `WITH perad AS (${inner}), cnt AS (SELECT ${gk?gk+', ':''}account_id, COUNT(*) c FROM perad GROUP BY ${gk?gk+', ':''}account_id) SELECT ${gk?gk+', ':''}MAX(c)*1.0/SUM(c) topshare FROM cnt ${gk?'GROUP BY '+gk:''}`;
-}
 function sumsSQL(fromSQL,whereArr,gexprs){
   const gsel=gexprs.map((g,i)=>`${g} AS g${i}`).join(', '), graw=gexprs.join(', '), gk2=gexprs.length?gexprs.map((_,i)=>`g${i}`).join(', ')+', ':'';
   return `SELECT ${gsel?gsel+', ':''}SUM(impressions) s_impr, SUM(clicks) s_clk, SUM(purchase) s_pur, SUM(spend_usd) s_sp, SUM(revenue_usd) s_rev, COUNT(DISTINCT ad_id) n_ads, COUNT(DISTINCT account_id) n_adv FROM ${fromSQL} WHERE ${whereArr.join(' AND ')} ${graw?'GROUP BY '+graw:''}`;
@@ -348,9 +341,6 @@ async function run(){
     // compare-by group AD-median baseline (for % within compare)
     const pRows=(await conn.query(medianCTE(parentFrom,wh,[g0expr]))).toArray();
     parentMed={}; pRows.forEach(r=>{const o={}; METRICS.forEach(m=>o[m[0]]=r[m[0]]==null?null:Number(r[m[0]])); parentMed[String(r.g0)]=o;});
-    // per-cell advertiser concentration (largest advertiser's share of the ads)
-    const cRows=(await conn.query(concSQL(from,wh,gExprs))).toArray();
-    conc={}; cRows.forEach(r=>{conc[String(r.g0)+'|'+(spl?String(r.g1):'')]=r.topshare==null?null:Number(r.topshare);});
     // study totals over the ad universe + overall AD-median baseline (for % vs all)
     const t=(await conn.query(totalsSQL(wh))).toArray()[0];
     tot={ads:Number(t.n_ads),adv:Number(t.n_adv),sp:Number(t.s_sp),rev:Number(t.s_rev),impr:Number(t.s_impr),clk:Number(t.s_clk),pur:Number(t.s_pur)};
@@ -387,7 +377,7 @@ async function run(){
   renderInfo(); render(); renderApplied(); st(`${rowsData.length} groups`);
 }
 function updateFilterCount(){ const n=DIMS.filter(d=>fstate[d[0]].values.size).length; const h=$('filtersHdr'); if(h)h.textContent=n?`Filters (${n})`:'Filters'; }
-let parentMed={},conc={},advice=null,lastRendered=[],comboData=[],baseVals=null;
+let parentMed={},advice=null,lastRendered=[],comboData=[],baseVals=null;
 
 /* ---- render ---- */
 // pooled (spend-weighted) ratio for a metric from a sums object {sp,rev,impr,clk,pur}
@@ -434,12 +424,11 @@ function render(){
   const act=(col,v,axis)=>{const vd=valDesc(col,v); return ` class="grp act" data-cmc="${col}" data-cmv="${encodeURIComponent(v)}" data-axis="${axis}" title="${vd?escA(vd)+' · ':''}Click for options: deep dive, keep, exclude"`;};
   const gattr=(col,v,clk,axis)=>clk?act(col,v,axis):` class="grp"${valDesc(col,v)?` title="${escA(valDesc(col,v))}"`:''}`;
   lastRendered=rows;
-  const warnFor=r=>{const cs=conc[r.g0+'|'+(g1?r.g1:'')]; return (cs!=null&&cs>0.34)?` <span class="conc" title="One advertiser is ${Math.round(cs*100)}% of the ads in this row — thin or concentrated, read with caution">⚠</span>`:'';};
-  const body=rows.map((r,ri)=>{const isBase=baseline&&r.g0===baseline.g0&&String(r.g1)===String(baseline.g1); const w=warnFor(r); let tr=`<tr data-ri="${ri}"${isBase?' class="baserow"':''}>`; tr+=`<td${gattr(cmp,r.g0,clickable,'cmp')}>${esc(r.g0)}</td>`; if(g1)tr+=`<td${gattr(spl,r.g1,clickable1,'spl')}>${esc(r.g1)}</td>`;
+  const body=rows.map((r,ri)=>{const isBase=baseline&&r.g0===baseline.g0&&String(r.g1)===String(baseline.g1); let tr=`<tr data-ri="${ri}"${isBase?' class="baserow"':''}>`; tr+=`<td${gattr(cmp,r.g0,clickable,'cmp')}>${esc(r.g0)}</td>`; if(g1)tr+=`<td${gattr(spl,r.g1,clickable1,'spl')}>${esc(r.g1)}</td>`;
     METRICS.forEach((m,i)=>{const dv=dispVal(r,m); const score=dv==null?null:(m[3]?dv:-dv);
       const bg = mode==='raw'?colorRaw(score,scales[i]):colorDiv(score);
       tr+=`<td style="background:${bg}">${mode==='raw'?fmt(r[m[0]],m[2]):fmtPct(dv)}</td>`;});
-    tr+=`<td style="color:var(--mut)">${(r.n_ads||0).toLocaleString()}${w}</td><td style="color:var(--mut)">${(r.n_adv||0).toLocaleString()}</td></tr>`;
+    tr+=`<td style="color:var(--mut)">${(r.n_ads||0).toLocaleString()}</td><td style="color:var(--mut)">${(r.n_adv||0).toLocaleString()}</td></tr>`;
     return {g0:r.g0,g1:r.g1,html:tr};});
   h+=body.map(b=>b.html).join('')+'</tbody></table>';
   if(!rows.length)h='<p class="subttl">No groups meet the thresholds (min ads / advertisers).</p>';
@@ -491,7 +480,7 @@ function esc(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>
 function renderInfo(){const t=lastTot||{},f=n=>n==null?'—':Number(n).toLocaleString(),money=n=>n==null?'—':'$'+Math.round(n).toLocaleString();
   $('info').innerHTML=[['Ads',f(t.ads)],['Advertisers',f(t.adv)],['Spend',money(t.sp)],['Revenue',money(t.rev)],['Impressions',f(t.impr)],['Clicks',f(t.clk)],['Purchases',f(t.pur)]].map(k=>`<div class="kpi"><b>${k[1]}</b><span>${k[0]}</span></div>`).join('');}
 const TIPTEXT='<b>Tip:</b> click any row value for options — deep dive (present vs absent), keep only, exclude, or set as metric baseline.';
-function modeNote(){ const unit=`the typical <b>advertiser's typical ad</b> — for each advertiser we take their median ad, then the median across advertisers, so each advertiser gets one vote and prolific advertisers can't dominate (ads under $${FLOOR} spend excluded so each ad ran enough to judge; ROAS≥100 rows excluded). ⚠ marks rows where one advertiser is &gt;⅓ of the ads.`;
+function modeNote(){ const unit=`the typical <b>advertiser's typical ad</b> — for each advertiser we take their median ad, then the median across advertisers, so each advertiser gets one vote and prolific advertisers can't dominate (ads under $${FLOOR} spend excluded so each ad ran enough to judge; ROAS≥100 rows excluded).`;
   if(mode==='base')return `<b>Baseline mode:</b> every metric is shown as % vs the chosen baseline row (<b>${esc(baseline?baseline.g0:'')}</b>), which reads 0%. Same advertiser-balanced values as Raw. Clear it to return to Raw.`;
   return mode==='pct'?`<b>% vs all:</b> each cell vs the overall value for these filters — same statistic as Raw, so the % matches the raw numbers. Based on ${unit} Green = better, red = worse.`:(mode==='pctin'?`<b>% within compare:</b> each cell vs its <b>${esc(DMAP[cmp].label)}</b> group. Based on ${unit}`:`<b>Raw</b> = ${unit}`); }
 function renderApplied(){ $('cmpBtn').title=dimDesc(cmp); $('splBtn').title=spl?dimDesc(spl):'';
