@@ -305,7 +305,7 @@ async function run(){
   const gExprs=[g0expr];
   if(spl){ const g1expr=axisExpr(spl,focusSpl); if(needsUnnest(spl,focusSpl))unnestCols.push(spl); gExprs.push(g1expr); }
   const from=fromClause(unnestCols);
-  const parentFrom=fromClause(needsUnnest(cmp,focus)?[cmp]:[]), parentG=[g0expr];
+  const parentFrom=from, parentG=[g0expr];   // % within compare: baseline uses the SAME unnest as the cells, so each group's cells sum to it and straddle 0 (consistent denominator)
   const wh=userWhere();
   let med,sums,tot={};
   try{
