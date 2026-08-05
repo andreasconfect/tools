@@ -197,7 +197,7 @@ const METRICS=[
  ['m5','AOV ($)','money',true,'rev','pur','pur>=25'],
 ];
 const GLOBAL=`(spend_usd<=0 OR revenue_usd < 100*spend_usd)`;   // drop ROAS>=100 outlier rows
-const FLOOR=30;   // per-ad minimum total spend ($) to enter the study — the unit of analysis is the AD
+const FLOOR=30;   // per-ad min spend so each ad ran enough to be judged; without it, barely-run ROAS-0 ads bias every median down ~15%
 const NARROW_ADS=2000;   // below this many ads (with filters active) the over-filtering advisor kicks in
 const NONE='(none)';
 const $=id=>document.getElementById(id); const st=m=>{$('status').textContent=m;$('status2')&&($('status2').textContent=m)};
@@ -304,14 +304,16 @@ function userWhere(except){ const cl=[GLOBAL];
   for(const col in fstate){ if(except&&col===except)continue; const f=fstate[col]; const sel=[...f.values]; if(!sel.length)continue;
     const ors='('+sel.map(v=>valClause(col,v)).join(' OR ')+')';
     cl.push(f.mode==='exclude'?`NOT ${ors}`:ors); } return cl; }
-// AD-LEVEL: each ad = (account_id, ad_id) pooled across months; ad enters if total spend >= FLOOR; then MEDIAN across ads.
+// ADVERTISER-BALANCED: each ad = (account_id, ad_id) pooled across months → per-advertiser MEDIAN of their ads → MEDIAN across advertisers.
+// Each advertiser gets one vote, so prolific advertisers can't dominate. Unit measured is still the ad (within each advertiser).
 function medianCTE(fromSQL,whereArr,gexprs){
   const gsel=gexprs.map((g,i)=>`${g} AS g${i}`).join(', '), graw=gexprs.join(', '), gk=gexprs.map((_,i)=>`g${i}`).join(', '), gk2=gk?gk+', ':'';
   const rSel=METRICS.map(m=>`CASE WHEN (${m[5]})>0 THEN (${m[4]})*1.0/(${m[5]}) END ${m[0]}`).join(', ');  // per-ad ratio when its denominator exists
-  const fSel=METRICS.map(m=>`MEDIAN(${m[0]}) ${m[0]}`).join(', ');
+  const advSel=METRICS.map(m=>`MEDIAN(${m[0]}) ${m[0]}`).join(', ');   // each advertiser's typical (median) ad
+  const fSel=METRICS.map(m=>`MEDIAN(${m[0]}) ${m[0]}`).join(', ');     // median across advertisers
   const where='WHERE '+whereArr.join(' AND ');
-  const base=`SELECT ${gsel?gsel+', ':''}account_id, ad_id, SUM(impressions) impr,SUM(clicks) clk,SUM(purchase) pur,SUM(spend_usd) sp,SUM(revenue_usd) rev FROM ${fromSQL} ${where} GROUP BY ${graw?graw+', ':''}account_id, ad_id HAVING SUM(spend_usd)>=${FLOOR}`;
-  return `WITH base AS (${base}), r AS (SELECT ${gk2}account_id, ${rSel} FROM base) SELECT ${gk2}COUNT(*) n_ads, COUNT(DISTINCT account_id) n_adv, ${fSel} FROM r ${gk?'GROUP BY '+gk:''}`;
+  const base=`SELECT ${gsel?gsel+', ':''}account_id, ad_id, SUM(impressions) impr,SUM(clicks) clk,SUM(purchase) pur,SUM(spend_usd) sp,SUM(revenue_usd) rev FROM ${fromSQL} ${where} GROUP BY ${graw?graw+', ':''}account_id, ad_id`;
+  return `WITH base AS (${base}), r AS (SELECT ${gk2}account_id, ${rSel} FROM base), adv AS (SELECT ${gk2}account_id, COUNT(*) ads, ${advSel} FROM r GROUP BY ${gk2}account_id) SELECT ${gk2}SUM(ads) n_ads, COUNT(*) n_adv, ${fSel} FROM adv ${gk?'GROUP BY '+gk:''}`;
 }
 // study totals over the AD universe (ads with spend>=FLOOR)
 function totalsSQL(whereArr){
@@ -489,12 +491,12 @@ function esc(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>
 function renderInfo(){const t=lastTot||{},f=n=>n==null?'—':Number(n).toLocaleString(),money=n=>n==null?'—':'$'+Math.round(n).toLocaleString();
   $('info').innerHTML=[['Ads',f(t.ads)],['Advertisers',f(t.adv)],['Spend',money(t.sp)],['Revenue',money(t.rev)],['Impressions',f(t.impr)],['Clicks',f(t.clk)],['Purchases',f(t.pur)]].map(k=>`<div class="kpi"><b>${k[1]}</b><span>${k[0]}</span></div>`).join('');}
 const TIPTEXT='<b>Tip:</b> click any row value for options — deep dive (present vs absent), keep only, exclude, or set as metric baseline.';
-function modeNote(){ const unit=`the typical <b>ad</b> — median across ads, each ad one vote (ads under $${FLOOR} spend excluded, ROAS≥100 rows excluded). ⚠ marks rows where one advertiser is &gt;⅓ of the ads.`;
-  if(mode==='base')return `<b>Baseline mode:</b> every metric is shown as % vs the chosen baseline row (<b>${esc(baseline?baseline.g0:'')}</b>), which reads 0%. Same median-across-ads values as Raw. Clear it to return to Raw.`;
-  return mode==='pct'?`<b>% vs all:</b> each cell’s typical ad vs the overall typical ad for these filters — same statistic as Raw, so the % matches the raw numbers. Based on ${unit} Green = better, red = worse.`:(mode==='pctin'?`<b>% within compare:</b> each cell’s typical ad vs its <b>${esc(DMAP[cmp].label)}</b> group’s typical ad. Whale-proof: based on ${unit}`:`<b>Raw</b> = ${unit}`); }
+function modeNote(){ const unit=`the typical <b>advertiser's typical ad</b> — for each advertiser we take their median ad, then the median across advertisers, so each advertiser gets one vote and prolific advertisers can't dominate (ads under $${FLOOR} spend excluded so each ad ran enough to judge; ROAS≥100 rows excluded). ⚠ marks rows where one advertiser is &gt;⅓ of the ads.`;
+  if(mode==='base')return `<b>Baseline mode:</b> every metric is shown as % vs the chosen baseline row (<b>${esc(baseline?baseline.g0:'')}</b>), which reads 0%. Same advertiser-balanced values as Raw. Clear it to return to Raw.`;
+  return mode==='pct'?`<b>% vs all:</b> each cell vs the overall value for these filters — same statistic as Raw, so the % matches the raw numbers. Based on ${unit} Green = better, red = worse.`:(mode==='pctin'?`<b>% within compare:</b> each cell vs its <b>${esc(DMAP[cmp].label)}</b> group. Based on ${unit}`:`<b>Raw</b> = ${unit}`); }
 function renderApplied(){ $('cmpBtn').title=dimDesc(cmp); $('splBtn').title=spl?dimDesc(spl):'';
   const fl=DIMS.map(d=>{const s=[...fstate[d[0]].values];return s.length?`${d[1]} ${fstate[d[0]].mode==='exclude'?'∉':'∈'} {${s.join(', ')}}`:null;}).filter(Boolean);
-  const meth=mode==='raw'?'median across ads':mode==='pct'?'median across ads (vs overall)':mode==='pctin'?'median across ads (vs compare-by group)':mode==='base'?`% vs baseline row “${esc(baseline?baseline.g0:'')}”`:'';
+  const meth=mode==='raw'?'advertiser-balanced median':mode==='pct'?'advertiser-balanced (vs overall)':mode==='pctin'?'advertiser-balanced (vs compare-by group)':mode==='base'?`% vs baseline row “${esc(baseline?baseline.g0:'')}”`:'';
   $('applied').innerHTML=`<b>Study:</b> compare by <b>${DMAP[cmp].label}</b>${spl?` split by <b>${DMAP[spl].label}</b>`:''} · ${meth} · ads ≥ $${FLOOR} · ROAS≥100 rows excluded · ${fl.length?('filters — '+fl.join(' · ')):'no filters'} <span class="link" id="copyCfg">⧉ Copy current filters</span> · <span class="link" id="learnMore">ⓘ Learn more</span><div id="helpbox" style="display:none;margin-top:6px;line-height:1.6">${TIPTEXT}<br>${modeNote()}</div>`;
   $('copyCfg').onclick=copyCfg;
   $('learnMore').onclick=()=>{const h=$('helpbox');h.style.display=h.style.display==='none'?'block':'none';};}
@@ -634,7 +636,7 @@ function copySheets(){
   if(!rowsData.length)return;const minAds=+$('minAds').value,minAdv=+$('minAdv').value,g1=!!spl;
   const rows=rowsData.filter(r=>r.n_ads>=minAds&&r.n_adv>=minAdv).sort((a,b)=>noneLast(a.g0,b.g0)||(g1?noneLast(a.g1,b.g1):0));
   const L=[];
-  L.push(`Catalog Ads Explorer — compare by ${DMAP[cmp].label}${g1?' split by '+DMAP[spl].label:''} — ${({raw:'raw',pct:'% vs all',pctin:'% within compare',base:'% vs baseline'})[mode]||mode} (median across ads; ads ≥ $${FLOOR} spend; ROAS≥100 rows excluded)`);
+  L.push(`Catalog Ads Explorer — compare by ${DMAP[cmp].label}${g1?' split by '+DMAP[spl].label:''} — ${({raw:'raw',pct:'% vs all',pctin:'% within compare',base:'% vs baseline'})[mode]||mode} (advertiser-balanced median — each advertiser's typical ad, then median across advertisers; ads ≥ $${FLOOR}; ROAS≥100 rows excluded)`);
   const fl=DIMS.filter(d=>fstate[d[0]].values.size).map(d=>`${d[1]}${fstate[d[0]].mode==='exclude'?' (exclude)':''}: ${[...fstate[d[0]].values].join('|')}`);
   L.push('Filters: '+(fl.length?fl.join(' ; '):'none'));
   const t=lastTot;L.push(`Study totals\tads\t${t.ads}\tadvertisers\t${t.adv}\tspend_usd\t${Math.round(t.sp)}\trevenue_usd\t${Math.round(t.rev)}\timpressions\t${t.impr}\tclicks\t${t.clk}\tpurchases\t${t.pur}`);L.push('');
