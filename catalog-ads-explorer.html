@@ -80,8 +80,13 @@
   .applied{flex:1;color:var(--mut);font-size:12px;min-width:0}
   .applied b{color:var(--ink)} .applied .link{color:var(--accent);cursor:pointer}
   #copy{flex:none}
-  #modal{position:fixed;inset:0;background:rgba(20,22,34,.35);display:none;align-items:flex-start;justify-content:center;z-index:50}
-  #modal.open{display:flex}
+  #modal,#pmodal{position:fixed;inset:0;background:rgba(20,22,34,.35);display:none;align-items:flex-start;justify-content:center;z-index:50}
+  #modal.open,#pmodal.open{display:flex}
+  .advisebar{background:#fff7ed;border:1px solid #f59e0b;border-radius:10px;padding:10px 13px;margin-bottom:10px;font-size:13px;line-height:1.7}
+  .advchip{display:inline-block;background:#fff;border:1px solid #f59e0b;border-radius:8px;padding:3px 9px;margin:3px 6px 3px 0;cursor:pointer;color:var(--ink)}
+  .advchip:hover{background:#fde9cf}.advchip b{color:#b45309}
+  .impact-high{color:#b45309;font-weight:600}.impact-low{color:var(--mut)}
+  .sbhint{font-size:11px;color:var(--mut);padding:0 14px 8px}
   .sheet{background:#fff;width:min(720px,94vw);max-height:82vh;margin-top:6vh;border-radius:16px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.2)}
   .sheet h3{margin:0;padding:16px 18px;border-bottom:1px solid var(--edge);font-size:15px}
   .sheet .msearch{padding:12px 18px;border-bottom:1px solid var(--edge)}
@@ -120,7 +125,8 @@
 </header>
 <div class="mainrow">
   <aside id="sidebar">
-    <div class="sbhead"><span>Filters</span><span id="clearAll" class="link">clear all</span></div>
+    <div class="sbhead"><span id="filtersHdr">Filters</span><span id="clearAll" class="link">clear all</span></div>
+    <div class="sbhint">Tip: paste a filter JSON anywhere to apply it.</div>
     <div id="filterList"></div>
   </aside>
   <main id="mainpane">
@@ -147,6 +153,11 @@
   <h3 id="modalTitle">Compare by</h3>
   <div class="msearch"><input id="modalSearch" placeholder="Search dimensions (e.g. price, size, funnel)…" autocomplete="off"></div>
   <div class="body" id="modalBody"></div>
+</div></div>
+<div id="pmodal"><div class="sheet" style="width:min(560px,94vw)">
+  <h3 id="pmodalTitle">Filters applied</h3>
+  <div class="body" id="pmodalBody" style="padding:14px 18px"></div>
+  <div style="padding:12px 18px;text-align:right;border-top:1px solid var(--edge)"><button class="primary" id="pmodalOk">Got it</button></div>
 </div></div>
 <div id="ctx" class="ctx"></div>
 
@@ -182,6 +193,7 @@ const METRICS=[
 ];
 const GLOBAL=`(spend_usd<=0 OR revenue_usd < 100*spend_usd)`;   // drop ROAS>=100 outlier rows
 const FLOOR=30;   // per-ad minimum total spend ($) to enter the study — the unit of analysis is the AD
+const NARROW_ADS=2000;   // below this many ads (with filters active) the over-filtering advisor kicks in
 const NONE='(none)';
 const $=id=>document.getElementById(id); const st=m=>{$('status').textContent=m;$('status2')&&($('status2').textContent=m)};
 let db,conn,loaded=false,cmp='design_tags',spl='',mode='pct',rowsData=[],lastTot={},lastBaseMed={},EX={},focus=null,focusSpl=null,baseline=null;
@@ -283,8 +295,8 @@ function fromClause(cols){ const parts=['fact']; cols.forEach(c=>{ if(DMAP[c].mu
 function valClause(col,val){ const v=String(val).replace(/'/g,"''");   // NULL-safe "row has this value" (handles (none) + multi tokens)
   if(val===NONE) return DMAP[col].multi?`COALESCE("${col}",'')=''`:`("${col}" IS NULL OR "${col}"='')`;
   return DMAP[col].multi?`((', '||COALESCE("${col}",'')||', ') LIKE '%, ${v}, %')`:`("${col}" IS NOT DISTINCT FROM '${v}')`; }
-function userWhere(){ const cl=[GLOBAL];
-  for(const col in fstate){ const f=fstate[col]; const sel=[...f.values]; if(!sel.length)continue;
+function userWhere(except){ const cl=[GLOBAL];
+  for(const col in fstate){ if(except&&col===except)continue; const f=fstate[col]; const sel=[...f.values]; if(!sel.length)continue;
     const ors='('+sel.map(v=>valClause(col,v)).join(' OR ')+')';
     cl.push(f.mode==='exclude'?`NOT ${ors}`:ors); } return cl; }
 // AD-LEVEL: each ad = (account_id, ad_id) pooled across months; ad enters if total spend >= FLOOR; then MEDIAN across ads.
@@ -353,9 +365,22 @@ async function run(){
       cm.forEach(r=>{const w=String(r.g0); if(w===focus||w===NONE)return; const o={g0:focus+' + '+w,n_adv:Number(r.n_adv),n_ads:Number(r.n_ads)};METRICS.forEach(m=>o[m[0]]=r[m[0]]==null?null:Number(r[m[0]]));Object.assign(o,csm[w]||{});comboData.push(o);});
     }catch(e){}
   }
+  // ---- over-filtering advisor: when very narrow, measure how much each active filter is constraining the data
+  advice=null;
+  const activeCols=DIMS.map(d=>d[0]).filter(c=>fstate[c].values.size);
+  const minA=+$('minAds').value, minV=+$('minAdv').value;
+  const displayable=rowsData.filter(r=>r.n_ads>=minA&&r.n_adv>=minV).length;
+  if(activeCols.length && (tot.ads<NARROW_ADS || displayable===0)){
+    const impacts=[];
+    for(const col of activeCols){ try{ const t2=(await conn.query(totalsSQL(userWhere(col)))).toArray()[0]; impacts.push({col,ads:Number(t2.n_ads)}); }catch(e){} }
+    impacts.sort((a,b)=>b.ads-a.ads);
+    advice={curAds:tot.ads, displayable, impacts};
+  }
+  updateFilterCount();
   renderInfo(); render(); renderApplied(); st(`${rowsData.length} groups`);
 }
-let parentMed={},conc={},lastRendered=[],comboData=[],baseVals=null;
+function updateFilterCount(){ const n=DIMS.filter(d=>fstate[d[0]].values.size).length; const h=$('filtersHdr'); if(h)h.textContent=n?`Filters (${n})`:'Filters'; }
+let parentMed={},conc={},advice=null,lastRendered=[],comboData=[],baseVals=null;
 
 /* ---- render ---- */
 // pooled (spend-weighted) ratio for a metric from a sums object {sp,rev,impr,clk,pur}
@@ -430,7 +455,22 @@ function render(){
       comboHtml=`<div class="combosep"></div><div class="subttl" style="margin:2px 0 8px"><b>Combinations with “${esc(focus)}”</b> — how ${esc(focus)} performs together with each other ${esc(DMAP[cmp].label)} value</div>`+ch;
     }
   }
-  $('out').innerHTML=banner+h+comboHtml;
+  // over-filtering advisor banner — ranked by absolute ads freed (robust when current count is 0)
+  let adviceHtml='';
+  if(advice && advice.impacts.length){
+    const cur=advice.curAds, best=advice.impacts.length?advice.impacts[0].ads:0;
+    const chips=advice.impacts.map(im=>{ const lbl=DMAP[im.col].label, gain=im.ads-cur;
+      const cls=im.ads>=NARROW_ADS?'impact-high':(im.ads>=500?'':'impact-low');
+      const tag=im.ads>=NARROW_ADS?'frees the most data':(im.ads>=500?'helps a bit':'barely helps');
+      return `<span class="advchip" data-advcol="${im.col}" title="Remove this filter to broaden the results">✕ <b>${esc(lbl)}</b> → ${im.ads.toLocaleString()} ads (${gain>=0?'+':''}${gain.toLocaleString()}, <span class="${cls}">${tag}</span>)</span>`; }).join('');
+    const head=advice.displayable===0
+      ? `<b>No results.</b> These ${advice.impacts.length} filters together leave only ${cur.toLocaleString()} ads. Remove the most impactful first:`
+      : `<b>Very narrow — only ${cur.toLocaleString()} ads.</b> Removing a filter broadens it (most impactful first):`;
+    const foot=best<NARROW_ADS?`<div style="margin-top:4px;color:var(--mut)">Even the best single removal stays narrow — you'll likely need to drop two.</div>`:'';
+    adviceHtml=`<div class="advisebar">${head}<br>${chips}${foot}</div>`;
+  }
+  $('out').innerHTML=adviceHtml+banner+h+comboHtml;
+  $('out').querySelectorAll('.advchip').forEach(el=>el.onclick=()=>{const col=el.dataset.advcol; if(!col)return; fstate[col].values.clear(); fstate[col].mode='include'; dimCtl[col]&&dimCtl[col].refresh(); run();});
   if(baseline) $('clearBase').onclick=()=>{setMode('raw');};
   if(focus!=null) $('clearFocus').onclick=()=>{focus=null;run();};
   if(focusSpl!=null) $('clearFocusSpl').onclick=()=>{focusSpl=null;run();};
@@ -524,6 +564,46 @@ function setMode(m){baseline=null;mode=m;['mRaw','mPct','mPctIn'].forEach(id=>$(
 $('mRaw').onclick=()=>setMode('raw');$('mPct').onclick=()=>setMode('pct');$('mPctIn').onclick=()=>setMode('pctin');
 ['minAds','minAdv'].forEach(id=>$(id).addEventListener('change',render));
 $('search').oninput=filterRows;
+
+/* ---- paste-to-apply filters ---- */
+function labelToCol(x){ if(x==null)return null; const s=String(x).trim().toLowerCase(); const d=DIMS.find(d=>d[0]===x||d[1].toLowerCase()===s||d[0].toLowerCase()===s); return d?d[0]:null; }
+function applyConfig(cfg){
+  const filters=Array.isArray(cfg)?cfg:(cfg.filters||[]);
+  DIMS.forEach(d=>{fstate[d[0]].mode='include';fstate[d[0]].values=new Set();});   // paste replaces the whole filter set
+  const set=[],unknown=[];
+  filters.forEach(f=>{ const col=labelToCol(f.dim||f.dimension||f.col); if(!col){unknown.push(f.dim||f.dimension||f.col);return;}
+    fstate[col].mode=(f.mode==='exclude'||f.mode==='is not'||f.exclude)?'exclude':'include';
+    const vals=Array.isArray(f.values)?f.values:(f.value!=null?[f.value]:[]);
+    vals.forEach(v=>fstate[col].values.add(String(v)));
+    if(fstate[col].values.size) set.push({col,mode:fstate[col].mode,values:[...fstate[col].values]}); });
+  if(!Array.isArray(cfg)){
+    if(cfg.compareBy){const c=labelToCol(cfg.compareBy); if(c){cmp=c;$('cmpLab').textContent=DMAP[c].label;focus=null;}}
+    if('splitBy' in cfg){ const c=cfg.splitBy?labelToCol(cfg.splitBy):''; if(c){spl=c;$('splLab').textContent=DMAP[c].label;focusSpl=null;} else if(!cfg.splitBy){spl='';$('splLab').textContent='— none —';focusSpl=null;} }
+    if(cfg.values&&{raw:1,pct:1,pctin:1}[cfg.values]){ mode=cfg.values; baseline=null; ['mRaw','mPct','mPctIn'].forEach(id=>$(id).classList.remove('on')); $({raw:'mRaw',pct:'mPct',pctin:'mPctIn'}[mode]).classList.add('on'); }
+    if(cfg.minAds!=null) $('minAds').value=cfg.minAds;
+    if(cfg.minAdvertisers!=null) $('minAdv').value=cfg.minAdvertisers;
+  }
+  Object.values(dimCtl).forEach(c=>c.refresh&&c.refresh());
+  run();
+  return {set,unknown};
+}
+function showPasteResult(res){
+  const rows=res.set.map(s=>`<div style="padding:2px 0"><b>${esc(DMAP[s.col].label)}</b> ${s.mode==='exclude'?'is not':'is'} {${s.values.map(esc).join(', ')}}</div>`).join('');
+  const unk=res.unknown.filter(Boolean).length?`<div style="color:#b45309;margin-top:8px">Ignored (unknown dimension): ${res.unknown.filter(Boolean).map(esc).join(', ')}</div>`:'';
+  $('pmodalBody').innerHTML=(res.set.length?`<div style="margin-bottom:6px">✓ Applied <b>${res.set.length}</b> filter${res.set.length>1?'s':''}:</div>${rows}`:'No filters found in the pasted JSON.')+unk;
+  $('pmodal').classList.add('open');
+}
+$('pmodalOk').onclick=()=>$('pmodal').classList.remove('open');
+$('pmodal').onclick=e=>{if(e.target.id==='pmodal')$('pmodal').classList.remove('open');};
+document.addEventListener('paste',e=>{
+  const ae=document.activeElement; if(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))return;   // don't hijack pasting into a field
+  const cd=e.clipboardData||window.clipboardData; const txt=cd&&cd.getData('text'); if(!txt)return;
+  let cfg; try{cfg=JSON.parse(txt);}catch(_){return;}
+  if(!(Array.isArray(cfg)||(cfg&&typeof cfg==='object'&&Array.isArray(cfg.filters))))return;   // not a filter JSON — ignore
+  e.preventDefault();
+  if(!loaded){st('load a dataset first, then paste filters');return;}
+  showPasteResult(applyConfig(cfg));
+});
 
 /* ---- copy ---- */
 function copyCfg(){const cfg={compareBy:DMAP[cmp].label,splitBy:spl?DMAP[spl].label:null,values:mode,minAds:+$('minAds').value,minAdvertisers:+$('minAdv').value,filters:DIMS.filter(d=>fstate[d[0]].values.size).map(d=>({dim:d[1],mode:fstate[d[0]].mode,values:[...fstate[d[0]].values]}))};navigator.clipboard.writeText(JSON.stringify(cfg,null,2)).then(()=>{const e=$('copyCfg'),o=e.textContent;e.textContent='✓ Copied';setTimeout(()=>e.textContent=o,1400);});}
