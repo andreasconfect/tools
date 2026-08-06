@@ -518,13 +518,15 @@ function showCtx(x,y,col,val,axis,ri){ const m=$('ctx'); const disp=val;
   m.querySelector('[data-a=base]').onclick=()=>{hideCtx(); const r=lastRendered[ri]; if(!r)return; baseline={g0:r.g0,g1:r.g1}; mode='base'; render();};
   m.querySelector('[data-a=copy]').onclick=()=>{hideCtx(); copyRow(ri);};
 }
+// ---- export schema: FIXED columns regardless of the Values mode ----
+// raw metric block (always the underlying advertiser-balanced medians) + selected-mode block + raw counts.
+function rawCell(r,m){ const v=r[m[0]]; if(v==null||!isFinite(v))return ''; return m[2]==='rate'?(v*100).toFixed(3)+'%':v.toFixed(4); }
+function selCell(r,m){ if(mode==='raw')return rawCell(r,m); const p=dispVal(r,m); return (p==null||!isFinite(p))?'':p.toFixed(2)+'%'; }
+function metricHead(){ const h=[]; METRICS.forEach(m=>h.push(m[1])); METRICS.forEach(m=>h.push(m[1]+' (selected)')); h.push('ads','advertisers','spend_usd','revenue_usd','impressions','clicks','purchases'); return h; }
+function metricCells(r){ const c=[]; METRICS.forEach(m=>c.push(rawCell(r,m))); METRICS.forEach(m=>c.push(selCell(r,m))); c.push(r.n_ads,r.n_adv,Math.round(r.sp||0),Math.round(r.rev||0),r.impr||0,r.clk||0,r.pur||0); return c; }
 function copyRow(i){ const r=lastRendered[i]; if(!r)return; const g1=!!spl;
-  const head=[DMAP[cmp].label]; if(g1)head.push(DMAP[spl].label);
-  METRICS.forEach(m=>head.push(m[1]+(mode==='raw'?'':' %Δ')));
-  head.push('ads','advertisers','spend_usd','revenue_usd','impressions','clicks','purchases');
-  const row=[r.g0]; if(g1)row.push(r.g1);
-  METRICS.forEach(m=>{ if(mode==='raw'){const v=r[m[0]];row.push(v==null?'':(m[2]==='rate'?(v*100).toFixed(3)+'%':v.toFixed(4)));} else {const p=dispVal(r,m);row.push(p==null?'':p.toFixed(2)+'%');} });
-  row.push(r.n_ads,r.n_adv,Math.round(r.sp||0),Math.round(r.rev||0),r.impr||0,r.clk||0,r.pur||0);
+  const head=[DMAP[cmp].label]; if(g1)head.push(DMAP[spl].label); head.push(...metricHead());
+  const row=[r.g0]; if(g1)row.push(r.g1); row.push(...metricCells(r));
   navigator.clipboard.writeText(head.join('\t')+'\n'+row.join('\t')).then(()=>st('row copied to clipboard'));
 }
 function hideCtx(){const m=$('ctx');if(m)m.style.display='none';}
@@ -629,26 +631,18 @@ function copySheets(){
   const fl=DIMS.filter(d=>fstate[d[0]].values.size).map(d=>`${d[1]}${fstate[d[0]].mode==='exclude'?' (exclude)':''}: ${[...fstate[d[0]].values].join('|')}`);
   L.push('Filters: '+(fl.length?fl.join(' ; '):'none'));
   const t=lastTot;L.push(`Study totals\tads\t${t.ads}\tadvertisers\t${t.adv}\tspend_usd\t${Math.round(t.sp)}\trevenue_usd\t${Math.round(t.rev)}\timpressions\t${t.impr}\tclicks\t${t.clk}\tpurchases\t${t.pur}`);L.push('');
-  const head=[DMAP[cmp].label];if(g1)head.push(DMAP[spl].label);
-  METRICS.forEach(m=>head.push(m[1]+(mode==='raw'?'':' %Δ')));
-  head.push('ads','advertisers','spend_usd','revenue_usd','impressions','clicks','purchases');
+  L.push('Columns: raw metrics first, then the same metrics in the selected mode ("(selected)"), then raw counts. Column set is fixed regardless of the Values mode.');
+  const head=[DMAP[cmp].label];if(g1)head.push(DMAP[spl].label); head.push(...metricHead());
   L.push(head.join('\t'));
-  rows.forEach(r=>{const row=[r.g0];if(g1)row.push(r.g1);
-    METRICS.forEach(m=>{if(mode==='raw'){const v=r[m[0]];row.push(v==null?'':(m[2]==='rate'?(v*100).toFixed(3)+'%':v.toFixed(4)));}else{const p=dispVal(r,m);row.push(p==null?'':p.toFixed(2)+'%');}});
-    row.push(r.n_ads,r.n_adv,Math.round(r.sp||0),Math.round(r.rev||0),r.impr||0,r.clk||0,r.pur||0);L.push(row.join('\t'));});
+  rows.forEach(r=>{const row=[r.g0];if(g1)row.push(r.g1); row.push(...metricCells(r)); L.push(row.join('\t'));});
   // deep-dive combinations (only present when focused into a single value of a multi-value dimension)
   if(comboData&&comboData.length){
     const crows=comboData.filter(r=>r.n_ads>=minAds&&r.n_adv>=minAdv).sort((a,b)=>noneLast(a.g0,b.g0));
     if(crows.length){
       L.push('');
       L.push(`Combinations with "${focus}" — how ${focus} performs together with each other ${DMAP[cmp].label} value`);
-      const chead=['Combination'];
-      METRICS.forEach(m=>chead.push(m[1]+(mode==='raw'?'':' %Δ')));
-      chead.push('ads','advertisers','spend_usd','revenue_usd','impressions','clicks','purchases');
-      L.push(chead.join('\t'));
-      crows.forEach(r=>{const row=[r.g0];
-        METRICS.forEach(m=>{if(mode==='raw'){const v=r[m[0]];row.push(v==null?'':(m[2]==='rate'?(v*100).toFixed(3)+'%':v.toFixed(4)));}else{const p=dispVal(r,m);row.push(p==null?'':p.toFixed(2)+'%');}});
-        row.push(r.n_ads,r.n_adv,Math.round(r.sp||0),Math.round(r.rev||0),r.impr||0,r.clk||0,r.pur||0);L.push(row.join('\t'));});
+      L.push(['Combination',...metricHead()].join('\t'));
+      crows.forEach(r=>{L.push([r.g0,...metricCells(r)].join('\t'));});
     }
   }
   navigator.clipboard.writeText(L.join('\n')).then(()=>{const b=$('copy'),o=b.textContent;b.textContent='✓ Copied';setTimeout(()=>b.textContent=o,1500);});
