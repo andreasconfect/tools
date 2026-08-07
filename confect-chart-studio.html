@@ -656,12 +656,13 @@ function drawLine(svg,area,W,H){
   const deltaAxis=axisUseDelta(axisMetric);
   const dual=metrics.length>1&&!deltaAxis;   // separate L/R axes when multiple metrics differ in scale (absolute mode)
   const valsOf=list=>{const a=[];list.forEach(s=>s.pts.forEach(p=>{if(p.v!=null)a.push(p.v);}));return a;};
+  const z0=deltaAxis||S.zeroBase;   // include 0 in the Y range when delta, or when "Start at 0" is on
   let RL,RR,ticksL,ticksR,aSpecL,aSpecR;
   if(dual){ const L=[series[0]],Rr=series.slice(1);
-    RL=axisRange(Math.min(...valsOf(L)),Math.max(...valsOf(L)),tickN(4),false); RR=axisRange(Math.min(...valsOf(Rr)),Math.max(...valsOf(Rr)),tickN(4),false);
+    RL=axisRange(Math.min(...valsOf(L)),Math.max(...valsOf(L)),tickN(4),z0); RR=axisRange(Math.min(...valsOf(Rr)),Math.max(...valsOf(Rr)),tickN(4),z0);
     ticksL=niceTicks(RL.min,RL.max,tickN(4)); ticksR=niceTicks(RR.min,RR.max,tickN(4));
     aSpecL=axisSpecFor(metrics[0],ticksL.concat(valsOf(L))); aSpecR=axisSpecFor(metrics[1],ticksR.concat(valsOf(Rr)));
-  } else { const all=valsOf(series); RL=axisRange(Math.min(...all),Math.max(...all),tickN(4),deltaAxis); ticksL=niceTicks(RL.min,RL.max,tickN(4)); aSpecL=axisSpecFor(axisMetric,ticksL.concat(all)); }
+  } else { const all=valsOf(series); RL=axisRange(Math.min(...all),Math.max(...all),tickN(4),z0); ticksL=niceTicks(RL.min,RL.max,tickN(4)); aSpecL=axisSpecFor(axisMetric,ticksL.concat(all)); }
   const padL=(S.showY?30:0)+tw(aSpecL.fmt(RL.max)+'0',18,400)+16;
   const padR=dual?((S.showY?26:0)+tw(aSpecR.fmt(RR.max)+'0',18,400)+16):Math.round(area.w*0.12);
   const plotW=area.w-padL-padR;
@@ -846,9 +847,10 @@ function drawScatter(svg,area,W,H){
   if(metrics.length<2){svg.appendChild(T(area.x,area.y+30,'Pick 2 metrics (X, Y) — optional 3rd = bubble size.',{fill:THEME.subtitle}));return;}
   const mx=metrics[0],my=metrics[1],ms=metrics[2]||null;
   const xs=rows.map(r=>axisValOf(r,mx)),ys=rows.map(r=>axisValOf(r,my));
-  const xmin=Math.min(...xs.filter(v=>v!=null)),xmax=Math.max(...xs.filter(v=>v!=null)),ymin=Math.min(...ys.filter(v=>v!=null)),ymax=Math.max(...ys.filter(v=>v!=null));
+  let xmin=Math.min(...xs.filter(v=>v!=null)),xmax=Math.max(...xs.filter(v=>v!=null)),ymin=Math.min(...ys.filter(v=>v!=null)),ymax=Math.max(...ys.filter(v=>v!=null));
+  if(S.zeroBase){xmin=Math.min(0,xmin);xmax=Math.max(0,xmax);ymin=Math.min(0,ymin);ymax=Math.max(0,ymax);}   // force 0 on both axes
   const pxp=(xmax-xmin)*0.08||1,pyp=(ymax-ymin)*0.08||1;
-  const xLo=xmin-pxp,xHi=xmax+pxp,yLo=ymin-pyp,yHi=ymax+pyp;
+  const xLo=S.zeroBase?Math.min(0,xmin):xmin-pxp,xHi=xmax+pxp,yLo=S.zeroBase?Math.min(0,ymin):ymin-pyp,yHi=ymax+pyp;
   const xt=niceTicks(xLo,xHi,tickN(5)),yt=niceTicks(yLo,yHi,tickN(5));
   const xSpec=axisSpecFor(mx,xt),ySpec=axisSpecFor(my,yt);
   // y-axis title needs the SAME gap from its numbers as the x-axis title (32 units below the ticks)
@@ -935,7 +937,7 @@ function initState(){
      showHead:true,headline:'',showSub:true,subhead:defaultSub(),showInfo:true,infoText:'',
      showX:true,xTitle:'',xTitleAuto:true,showY:true,yTitle:'',yTitleAuto:true,tickCount:0,
      barColor:'single',refLine:null,refLabel:'',bg:'transparent',tiles:[],secondary:'pink',
-     detail:2,fileType:'png',expScale:2,rename:{},metricRename:{},showAvg:false};
+     detail:2,fileType:'png',expScale:2,rename:{},metricRename:{},showAvg:false,zeroBase:false};
   S.headline=defaultHeadline();S.infoText=defaultInfo();S.tiles=buildTiles();
 }
 function onType(){
@@ -1032,7 +1034,9 @@ function sync(){buildTypeGrid();buildMetricChips();mapHint();buildGroupList();bu
 function showControls(){['s-type','s-map','s-groups'].forEach(id=>document.getElementById(id).style.display='');}
 function buildVisChips(){const c=document.getElementById('visChips');if(!c||!S)return;c.innerHTML='';
   const lab=document.createElement('span');lab.className='lab';lab.textContent='Show';c.appendChild(lab);
-  [['showHead','Headline'],['showSub','Sub'],['showInfo','Footer'],['showLogo','Logo'],['showValues','Values'],['showAvg','Avg line']].forEach(([key,name])=>{
+  const chips=[['showHead','Headline'],['showSub','Sub'],['showInfo','Footer'],['showLogo','Logo'],['showValues','Values'],['showAvg','Avg line']];
+  if(S.type==='line'||S.type==='scatter')chips.push(['zeroBase','Start at 0']);   // line/scatter: force the axis to include 0
+  chips.forEach(([key,name])=>{
     const b=document.createElement('button');b.className='tbtn'+(S[key]?'':' off');b.textContent=name;b.onclick=()=>{S[key]=!S[key];render();};c.appendChild(b);});}
 function buildDetailDots(){const c=document.getElementById('detailDots');if(!c||!S)return;c.innerHTML='';
   for(let i=1;i<=DETAIL_MAX;i++){const d=document.createElement('i');if(i<=S.detail)d.classList.add('on');d.title='Detail '+i;d.onclick=()=>{S.detail=i;sync();render();};c.appendChild(d);}
