@@ -110,6 +110,18 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--purple);
 <header class="appbar">
   <span class="brand"><b>Confect</b> · Chart Studio</span>
 </header>
+<!-- AI Prompt Bar -->
+<div id="aiBar" style="display:flex;align-items:center;gap:10px;padding:8px 18px;background:#FAF8FE;border-bottom:1px solid #E4DEF3">
+  <div style="width:32px;height:32px;border-radius:8px;background:#9852DB;display:flex;align-items:center;justify-content:center;flex:none">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 4-8 16"/><path d="m2 16 6-3 6 3"/><path d="m10 8 6-3 6 3"/></svg>
+  </div>
+  <input id="aiInput" type="text" placeholder="What would you like to build?"
+    style="flex:1;font-family:inherit;font-size:14px;border:1px solid #DDD8E6;border-radius:10px;padding:9px 14px;background:#fff;color:#1E2038;outline:none"
+    onfocus="this.style.borderColor='#9852DB';this.style.boxShadow='0 0 0 3px rgba(152,82,219,.15)'"
+    onblur="this.style.borderColor='#DDD8E6';this.style.boxShadow='none'">
+  <button id="aiGo" style="border:none;background:#9852DB;color:#fff;font-family:inherit;font-weight:500;font-size:13px;border-radius:10px;padding:9px 16px;cursor:pointer;white-space:nowrap">Generate</button>
+  <span id="aiStatus" style="font-size:12px;color:#707070;min-width:60px"></span>
+</div>
 <div class="layout">
   <aside class="panel">
     <div class="section" id="s-data">
@@ -514,11 +526,14 @@ function render(){
   const PADX=55;
   let y=48;
   const headSize=38;
+  let headerShown=false;
   if(S.showHead&&S.headline){ const lines=wrapTitle(S.headline,W-PADX*2,headSize,700);
-    lines.forEach(l=>{ y+=47; svg.appendChild(ed(titleLine(l,PADX,y,headSize),'headline')); }); y+=8; }
-  if(S.showSub&&S.subhead){ y+=33; svg.appendChild(ed(T(PADX,y,S.subhead,{size:22,fill:THEME.subtitle}),'subhead')); y+=6; }
-  const footH=(S.showInfo||S.showLogo)?78:20;
-  const area={x:PADX,y:y+34,w:W-PADX*2,h:H-(y+34)-footH};
+    lines.forEach(l=>{ y+=47; svg.appendChild(ed(titleLine(l,PADX,y,headSize),'headline')); }); y+=8; headerShown=true; }
+  if(S.showSub&&S.subhead){ y+=33; svg.appendChild(ed(T(PADX,y,S.subhead,{size:22,fill:THEME.subtitle}),'subhead')); y+=6; headerShown=true; }
+  const footShown=(S.showInfo&&S.infoText)||(S.showLogo&&LOGO_INNER);
+  const footH=footShown?78:PADX;              // bottom margin collapses to PADX when the footer is empty
+  const topPad=headerShown?(y+34):PADX;       // top margin collapses to PADX when there is no headline/subhead
+  const area={x:PADX,y:topPad,w:W-PADX*2,h:H-topPad-footH};
   try{
     ({bar:drawBar,diverging:drawDiverging,line:drawLine,grouped:drawGrouped,smallmult:drawSmallMult,
       donut:drawDonut,table:drawTable,scatter:drawScatter,stat:drawStat})[S.type](svg,area,W,H);
@@ -967,6 +982,11 @@ function buildMetricChips(){const c=document.getElementById('metricChips');c.inn
     const si=sel.findIndex(x=>x.header===m.header);const sw=on?seriesColor(si<0?0:si):'#CFCAD8';
     let tag='';if(S.type==='scatter'&&on){tag=['X','Y','size'][si]?` · ${['X','Y','size'][si]}`:'';}
     chip.innerHTML=`<span class="sw" style="background:${sw}"></span>${m.label}${tag}`;chip.onclick=()=>toggleMetric(m.header);c.appendChild(chip);});
+  // "Start at 0" axis option lives with the metrics (line & scatter only)
+  const oldz=document.getElementById('zeroWrap');if(oldz)oldz.remove();
+  if(S.type==='line'||S.type==='scatter'){const zw=document.createElement('div');zw.id='zeroWrap';zw.style.marginTop='10px';
+    zw.innerHTML=`<label class="fld" style="margin-top:0">Axis start</label><div class="seg" id="zeroSeg"><button data-z="0" class="${S.zeroBase?'':'on'}">Fit to data</button><button data-z="1" class="${S.zeroBase?'on':''}">Start at 0</button></div>`;
+    c.after(zw);zw.querySelectorAll('button').forEach(b=>b.onclick=()=>{S.zeroBase=b.dataset.z==='1';sync();render();});}
 }
 function toggleMetric(h){const single=(S.type==='bar'||S.type==='diverging');
   if(single){S.metricHidden=new Set(DATA.metrics.filter(m=>m.header!==h).map(m=>m.header));}
@@ -1035,7 +1055,6 @@ function showControls(){['s-type','s-map','s-groups'].forEach(id=>document.getEl
 function buildVisChips(){const c=document.getElementById('visChips');if(!c||!S)return;c.innerHTML='';
   const lab=document.createElement('span');lab.className='lab';lab.textContent='Show';c.appendChild(lab);
   const chips=[['showHead','Headline'],['showSub','Sub'],['showInfo','Footer'],['showLogo','Logo'],['showValues','Values'],['showAvg','Avg line']];
-  if(S.type==='line'||S.type==='scatter')chips.push(['zeroBase','Start at 0']);   // line/scatter: force the axis to include 0
   chips.forEach(([key,name])=>{
     const b=document.createElement('button');b.className='tbtn'+(S[key]?'':' off');b.textContent=name;b.onclick=()=>{S[key]=!S[key];render();};c.appendChild(b);});}
 function buildDetailDots(){const c=document.getElementById('detailDots');if(!c||!S)return;c.innerHTML='';
@@ -1128,6 +1147,92 @@ function loadRaw(raw){const err=document.getElementById('parseErr');err.textCont
 function doExport(){ if(S.fileType==='svg') exportSVG(); else exportPNG().catch(e=>alert('Export failed: '+e.message)); }
 /* ---------- EVENTS ---------- */
 window.addEventListener('DOMContentLoaded',()=>{
+// AI Prompt integration
+const AI_WEBHOOK_URL = 'https://n8n-hooks.confect.io/webhook/chart-studio-ai';
+
+async function aiSend() {
+  const input = document.getElementById('aiInput');
+  const status = document.getElementById('aiStatus');
+  const prompt = input.value.trim();
+  if (!prompt) return;
+
+  status.textContent = 'Thinking...';
+  status.style.color = '#9852DB';
+
+  const ctx = {
+    prompt,
+    hasData: !!DATA,
+    chartType: S ? S.type : null,
+    availableMetrics: DATA ? DATA.metrics.map(m => m.label || m.header) : [],
+    availableGroups: DATA ? DATA.rows.map(r => r.key).filter(k => k !== '__baseline') : [],
+    currentHeadline: S ? S.headline : '',
+    currentSubhead: S ? S.subhead : '',
+  };
+
+  try {
+    const res = await fetch(AI_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(ctx)
+    });
+    const result = await res.json();
+
+    if (result.error) {
+      status.textContent = result.error;
+      status.style.color = '#E53E3E';
+      return;
+    }
+
+    if (result.chartType && CHART_TYPES.find(t => t.id === result.chartType)) {
+      S.type = result.chartType;
+    }
+    if (result.headline != null) S.headline = result.headline;
+    if (result.subhead != null) S.subhead = result.subhead;
+
+    if (result.activeMetrics && Array.isArray(result.activeMetrics)) {
+      const mHeaders = DATA.metrics.map(m => m.header);
+      S.metricHidden = new Set(mHeaders);
+      S.metricOrder = [];
+      result.activeMetrics.forEach(label => {
+        const m = DATA.metrics.find(m =>
+          m.header.toLowerCase().includes(label.toLowerCase()) ||
+          (m.label || '').toLowerCase().includes(label.toLowerCase()) ||
+          (m.short || '').toLowerCase().includes(label.toLowerCase())
+        );
+        if (m) {
+          S.metricHidden.delete(m.header);
+          S.metricOrder.push(m.header);
+        }
+      });
+    }
+
+    if (result.showAvg != null) S.showAvg = result.showAvg;
+    if (result.showValues != null) S.showValues = result.showValues;
+    if (result.axisMode) S.axisMode = result.axisMode;
+    if (result.valueMode) S.valueMode = result.valueMode;
+
+    buildTypeGrid();
+    buildMetricChips();
+    buildGroupList();
+    buildVisChips();
+    render();
+
+    status.textContent = 'Applied!';
+    status.style.color = '#38A169';
+    setTimeout(() => { status.textContent = ''; }, 2000);
+
+  } catch (e) {
+    status.textContent = 'Failed';
+    status.style.color = '#E53E3E';
+    console.error('AI error:', e);
+  }
+}
+
+document.getElementById('aiInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') aiSend();
+});
+document.getElementById('aiGo').addEventListener('click', aiSend);
+
   grabLogo();
   const ff=document.createElement('style');ff.id='fontfaceStyle';
   ff.textContent=[...document.styleSheets[0].cssRules].filter(r=>r.type===CSSRule.FONT_FACE_RULE).map(r=>r.cssText).join('\n');document.head.appendChild(ff);
