@@ -1159,12 +1159,26 @@ async function aiSend() {
   status.textContent = 'Thinking...';
   status.style.color = '#9852DB';
 
+  // Per-metric min/max and which group holds each, so the AI can reason about
+  // the actual data rather than just the labels (e.g. "highlight the strongest theme").
+  const dataSummary = DATA ? DATA.metrics.map(m => {
+    const vals = DATA.rows
+      .filter(r => r.key !== '__baseline')
+      .map(r => ({ key: r.key, v: r.metrics[m.header] }))
+      .filter(x => x.v != null);
+    if (!vals.length) return null;
+    const hi = vals.reduce((a, b) => b.v > a.v ? b : a);
+    const lo = vals.reduce((a, b) => b.v < a.v ? b : a);
+    return { metric: m.label || m.header, min: lo.v, max: hi.v, highestGroup: hi.key, lowestGroup: lo.key };
+  }).filter(Boolean) : [];
+
   const ctx = {
     prompt,
     hasData: !!DATA,
     chartType: S ? S.type : null,
     availableMetrics: DATA ? DATA.metrics.map(m => m.label || m.header) : [],
     availableGroups: DATA ? DATA.rows.map(r => r.key).filter(k => k !== '__baseline') : [],
+    dataSummary,
     currentHeadline: S ? S.headline : '',
     currentSubhead: S ? S.subhead : '',
   };
@@ -1210,6 +1224,18 @@ async function aiSend() {
     if (result.showValues != null) S.showValues = result.showValues;
     if (result.axisMode) S.axisMode = result.axisMode;
     if (result.valueMode) S.valueMode = result.valueMode;
+
+    // Highlight a single group (e.g. "highlight the strongest ad theme"):
+    // move it to the front of the slot order and switch the palette to gray-out mode.
+    if (result.highlightGroup) {
+      const match = DATA.rows.find(r =>
+        r.key.toLowerCase().includes(result.highlightGroup.toLowerCase())
+      );
+      if (match) {
+        S.slots = [match.key, ...S.slots.filter(k => k !== match.key)];
+        S.secondary = 'gray';
+      }
+    }
 
     buildTypeGrid();
     buildMetricChips();
