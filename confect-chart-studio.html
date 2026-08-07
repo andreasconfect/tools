@@ -1115,7 +1115,12 @@ function serialize(bg){const svg=document.getElementById('chartSvg').cloneNode(t
   const rect=svg.querySelector('#bgRect');if(rect){if(bg==='transparent')rect.remove();else rect.setAttribute('fill','#FFFFFF');}
   return '<?xml version="1.0" encoding="UTF-8"?>\n'+new XMLSerializer().serializeToString(svg);}
 function dl(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),3000);}
-function fileBase(){return 'confect-'+S.type+'-'+(DATA.dims[0]||'chart').toLowerCase().replace(/[^a-z0-9]+/g,'-');}
+function fileBase(){
+  const clean=s=>(''+(s==null?'':s)).replace(/\*/g,'').replace(/[\/\\:*?"<>|]+/g,' ').replace(/\s+/g,' ').trim();  // drop highlight *…* + filesystem-illegal chars
+  const head=clean(S.showHead?S.headline:''), sub=clean(S.showSub?S.subhead:'');
+  const name=[head,sub].filter(Boolean).join(' - ');
+  return name || ('confect-'+S.type+'-'+(DATA.dims[0]||'chart').toLowerCase().replace(/[^a-z0-9]+/g,'-'));  // fallback when no headline/subhead
+}
 function exportSVG(){dl(new Blob([serialize(S.bg)],{type:'image/svg+xml'}),fileBase()+'.svg');}
 // Rasterize the current chart to a Blob. JPEG is rendered on white and quality-tuned for small web files.
 async function rasterize(){const jpeg=S.fileType==='jpeg';const [pw,ph]=S._px||[1280,720];
