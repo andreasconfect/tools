@@ -81,8 +81,8 @@
   .applied{flex:1;color:var(--mut);font-size:12px;min-width:0}
   .applied b{color:var(--ink)} .applied .link{color:var(--accent);cursor:pointer}
   #copy{flex:none}
-  #modal,#pmodal{position:fixed;inset:0;background:rgba(20,22,34,.35);display:none;align-items:flex-start;justify-content:center;z-index:50}
-  #modal.open,#pmodal.open{display:flex}
+  #modal,#pmodal,#cmodal{position:fixed;inset:0;background:rgba(20,22,34,.35);display:none;align-items:flex-start;justify-content:center;z-index:50}
+  #modal.open,#pmodal.open,#cmodal.open{display:flex}
   .advisebar{background:#fff7ed;border:1px solid #f59e0b;border-radius:10px;padding:10px 13px;margin-bottom:10px;font-size:13px;line-height:1.7}
   .advchip{display:inline-block;background:#fff;border:1px solid #f59e0b;border-radius:8px;padding:3px 9px;margin:3px 6px 3px 0;cursor:pointer;color:var(--ink)}
   .advchip:hover{background:#fde9cf}.advchip b{color:#b45309}
@@ -98,6 +98,16 @@
   .mo .t{font-weight:600}.mo .ex{color:var(--mut);font-size:11.5px}.mo .dsc{color:var(--ink);font-size:12px;margin:2px 0}
   .ctx .ci.hd .dd{font-weight:400;color:var(--ink);margin-top:3px;white-space:normal}
   .ctx .ci.hd{max-width:300px;white-space:normal}
+  .cbtn{border:1px solid var(--edge);background:#fff;border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer}
+  .cbtn:hover{background:var(--accent2);border-color:var(--accent);color:var(--accent)}
+  .cbox{border:1px solid var(--edge);border-radius:10px;padding:12px;margin:8px 0;background:var(--panel)}
+  .cbox h4{margin:0 0 8px;font-size:13px}
+  .crow{display:flex;gap:6px;align-items:center;margin:4px 0;flex-wrap:wrap}
+  .crow input[type=text],.crow select{padding:5px 7px;border:1px solid var(--edge);border-radius:6px;font:inherit;background:#fff}
+  .csec{font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin:16px 0 4px}
+  .cx{cursor:pointer;color:var(--mut);font-weight:700}.cx:hover{color:#b91c1c}
+  .chint{font-size:11px;color:var(--mut);margin:2px 0 6px}
+  .clist .crow{background:#fff;border:1px solid var(--edge);border-radius:8px;padding:6px 10px}
   .prow{display:flex;align-items:flex-start;gap:8px;padding:6px 2px;cursor:pointer;border-radius:6px}
   .prow:hover{background:var(--panel)} .prow input{margin-top:3px}
   .psec{font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin:12px 0 4px}
@@ -125,7 +135,7 @@
 
 <div id="app">
 <header>
-  <h1>Catalog Ads Explorer</h1><span class="badge">Confect</span><span class="grow"></span>
+  <h1>Catalog Ads Explorer</h1><span class="badge">Confect</span><button class="cbtn" id="customBtn" style="margin-left:10px">＋ Custom fields</button><span class="grow"></span>
   <span id="status2" class="subttl"></span>
 </header>
 <div class="mainrow">
@@ -164,11 +174,16 @@
   <div class="body" id="pmodalBody" style="padding:12px 18px;max-height:60vh;overflow:auto"></div>
   <div style="padding:12px 18px;text-align:right;border-top:1px solid var(--edge)"><button id="pmodalCancel">Cancel</button> <button class="primary" id="pmodalOk">Apply selected</button></div>
 </div></div>
+<div id="cmodal"><div class="sheet" style="width:min(780px,95vw)">
+  <h3>Custom fields — this session only</h3>
+  <div class="body" id="cmodalBody" style="padding:14px 18px;max-height:74vh;overflow:auto"></div>
+  <div style="padding:12px 18px;text-align:right;border-top:1px solid var(--edge)"><button class="primary" id="cmodalClose">Done</button></div>
+</div></div>
 <div id="ctx" class="ctx"></div>
 
 <script type="module">
 import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0/+esm';
-const DIMS=[
+let DIMS=[
  ['funnel','Funnel','Ad',false],['ad_format','Ad format','Ad',true],
  ['creative_format','Creative format','Ad',true],['targeting','Targeting','Ad',true],
  ['country','Country','Ad',true],['region','Region','Ad',true],['theme','Ad theme','Ad',true],['month','Month','Ad',false],['quarter','Quarter','Ad',false],
@@ -187,9 +202,10 @@ const DIMS=[
  ['aov_bucket','AOV bucket ($)','Advertiser',false],['growth','Growth trend','Advertiser',false],
  ['performance_group','Performance group','Advertiser',false],['dpa_spend_group','Catalog spend share','Advertiser',false],
 ];
-const GROUPS=['Ad','Advertiser','Design','Product set','Variant'];            // groups A→Z
+const BASE_DIMS=DIMS.slice();
+let GROUPS=['Ad','Advertiser','Design','Product set','Variant'];            // groups A→Z (Custom added when custom dims exist)
 const groupDims=g=>DIMS.filter(d=>d[2]===g).sort((a,b)=>a[1].localeCompare(b[1])); // keys A→Z within a group
-const DMAP=Object.fromEntries(DIMS.map(d=>[d[0],{label:d[1],group:d[2],multi:d[3]}]));
+let DMAP=Object.fromEntries(DIMS.map(d=>[d[0],{label:d[1],group:d[2],multi:d[3]}]));
 const METRICS=[
  ['m0','ROAS','x',true,'rev','sp','sp>=200'],['m6','CPA ($)','money',false,'sp','pur','pur>=25'],
  ['m1','CTR','rate',true,'clk','impr','impr>=2000'],['m3','CVR','rate',true,'pur','clk','clk>=100'],
@@ -204,6 +220,7 @@ const $=id=>document.getElementById(id); const st=m=>{$('status').textContent=m;
 let db,conn,loaded=false,cmp='design_tags',spl='',mode='pct',rowsData=[],lastTot={},lastBaseMed={},EX={},focus=null,focusSpl=null,baseline=null;
 const fstate={}; DIMS.forEach(d=>fstate[d[0]]={mode:'include',values:new Set()});  // one persistent filter per dimension
 const dimCtl={};  // sidebar control handles, keyed by column
+let CDIMS=[],CMETS=[],overallCM={},parentCM={},groupCounts={};   // session custom dimensions & metrics (+ per-run custom-metric baselines)
 let DESC={};      // dimension + value descriptions (inlined — single-file, no external json)
 const DESC_DATA={"_meta":{"purpose":"Hover tooltip copy for the Catalog Ads Explorer. 'description' shows when hovering a dimension name; 'values[value]' shows when hovering a specific value. Missing entries render no tooltip.","version":"v4 (2026-08-04) — applied line-item feedback: funnel wording, more examples, SKU/feed-quality framing, product-image clarity.","decisions_for_you":["Confirm wording on adult and tobacco_vape sub-industries.","Confirm the example style/length feels right."]},"dimensions":{"funnel":{"label":"Funnel","group":"Ad","multi":false,"description":"Where in the buying journey the ad targets people.","values":{"upper_funnel":"Broad, top-of-funnel prospecting — reaching new people who don't know the brand yet.","lower_funnel":"Bottom-of-funnel retargeting — re-reaching people who already visited or bought."}},"ad_format":{"label":"Ad format","group":"Ad","multi":true,"description":"The Meta ad unit the creative runs in.","values":{"single_image":"One static image per ad.","carousel_ad":"Several swipeable cards, usually one product each.","collection_ad":"A cover image above a grid of catalog products."}},"creative_format":{"label":"Creative format","group":"Ad","multi":true,"description":"Whether the creative is a still image or a video.","values":{"image":"A still image.","video":"A video."}},"targeting":{"label":"Targeting","group":"Ad","multi":true,"description":"Who the ad is aimed at.","values":{"women":"Aimed at women.","men":"Aimed at men.","unisex":"For all genders.","kids":"For children.","age":"Aimed at a specific age group, e.g. '50+' or teens."}},"country":{"label":"Country","group":"Ad","multi":true,"description":"The advertiser's home country, or the country the ad was shown in.","valuesNote":"Values are country names."},"region":{"label":"Region","group":"Ad","multi":true,"description":"The part of the world the country is in — from broad areas down to smaller groups.","values":{"Scandinavia":"Denmark, Norway and Sweden.","DACH":"Germany, Austria and Switzerland.","Benelux":"Belgium, the Netherlands and Luxembourg.","Baltics":"Estonia, Latvia and Lithuania.","Balkans":"Southeast Europe, e.g. Croatia, Serbia, Greece.","Iberia":"Spain and Portugal.","British Isles":"The UK and Ireland.","Northern Europe":"Northern European countries, e.g. Denmark, Sweden, the UK.","Western Europe":"Western European countries, e.g. Germany, France, the Netherlands.","Southern Europe":"Southern European countries, e.g. Spain, Italy, Greece.","Eastern Europe":"Eastern European countries, e.g. Poland, Czechia, the Baltics.","Europe":"Any European country.","North America":"The USA, Canada and Mexico.","Latin America":"Central and South America and the Caribbean.","Asia-Pacific":"Asia and Oceania, e.g. Japan, India, Australia.","Middle East":"Gulf and West-Asian countries, e.g. UAE, Saudi Arabia.","Africa":"African countries.","Rest of World":"Countries not in the regions above."}},"theme":{"label":"Ad theme","group":"Ad","multi":true,"description":"What the ad is about — its occasion or angle.","values":{"always_on":"Everyday products, no special occasion.","sale":"A discount or promotion, e.g. '-20%', clearance, 'Summer Sale'.","new":"New arrivals or a launch, e.g. 'Just dropped', 'New collection'.","seasonal":"Tied to a time of year, e.g. summer, autumn, back-to-school.","holiday":"Tied to a holiday or event, e.g. Christmas, Valentine's, Black Friday."}},"month":{"label":"Month","group":"Ad","multi":false,"description":"The calendar month the ad ran (YYYY-MM). E.g. 2025-11 = November 2025.","valuesNote":"Values are literal year-months."},"quarter":{"label":"Quarter","group":"Ad","multi":false,"description":"The quarter the ad ran (Q1 = Jan–Mar, Q2 = Apr–Jun, Q3 = Jul–Sep, Q4 = Oct–Dec).","valuesNote":"Values are year-quarters, e.g. 2025-Q4."},"ps_tags":{"label":"Product set purpose","group":"Product set","multi":true,"description":"What the product set is built to show.","values":{"full_catalog":"The whole catalog.","manual_selection":"A hand-picked list of specific products.","category_specific":"One product category, e.g. shoes.","brand_specific":"One or more specific brands.","collection":"A named collection or line.","bestsellers":"Top-selling products.","new_arrivals":"Recently added products.","sale":"On-sale, discounted products.","sale_excluded":"Full-price products only.","category_sale":"One category, on sale, e.g. '20% off tables', 'sofas on sale'.","season":"Products tied to a season, e.g. summer.","season_sale":"Seasonal products on sale, or products on sale during a season, e.g. a summer sale.","holiday":"Products tied to a holiday or event.","weather":"Weather-driven products, e.g. rainwear.","activity_usecase":"Grouped by activity, e.g. running, hiking.","audience_genderorage":"Filtered to a gender or age group, e.g. women, kids.","accessories":"Accessory products only, e.g. belts, bags, jewellery, hats.","outlet_clearance":"Outlet and clearance items.","price_positioning":"A price band, e.g. under $30, over $100, or premium vs budget.","margin":"Chosen by profit margin, e.g. only high-margin products.","giftcard_excluded":"Everything except gift cards."}},"ps_included_filters":{"label":"Product set filters","group":"Product set","multi":true,"description":"Which product-feed fields the set uses to choose products.","valuesNote":"Auto, travel and property vertical fields (make, model, vin, hotel_id, etc.) are literal feed names; expand later if needed.","values":{"brand":"Product brand.","category":"Product category.","product_type":"The merchant's product type.","color":"Colour.","size":"Size.","gender":"Gender.","age_group":"Age group, e.g. adult, kids.","material":"Material.","pattern":"Pattern.","price":"Regular price.","sale_price":"Sale price.","condition":"New, used or refurbished.","title":"Product title.","product_id":"Specific product IDs.","custom_label":"A custom_label feed field.","custom_number":"A custom_number feed field.","tags":"Product tags.","product_feed_id":"Which feed the item is from."}},"rule_types":{"label":"Design rule type","group":"Variant","multi":false,"description":"What decides which design each product gets.","values":{"none":"One fixed design for all products.","product":"Design chosen by the product, e.g. on-sale items get a sale design.","schedule":"Design chosen by date, e.g. a Black Friday design on set dates.","both":"Chosen by both the product and the date."}},"schedule_weeks":{"label":"Design rule schedule length (weeks)","group":"Variant","multi":false,"description":"How many weeks a date-based design runs for.","values":{"open_ended":"Runs with no end date."},"valuesNote":"Numbers are the week count."},"num_designs":{"label":"Number of designs in variant","group":"Variant","multi":false,"description":"How many different designs the variant contains.","valuesNote":"Values are counts."},"name_tags":{"label":"Variant name tags","group":"Variant","multi":true,"description":"What the variant is for, e.g. primary, sale, seasonal.","values":{"primary":"The main, everyday variant.","funnel":"Built for a funnel stage, e.g. prospecting or retargeting.","sale":"Built for a sale or promotion.","seasonal":"Built for a season, e.g. summer or winter.","holiday":"Built for a holiday, e.g. Christmas or Black Friday.","news":"Built for new arrivals.","design_variation":"A design variation or A/B test."}},"product_rule_fields":{"label":"Design rule fields","group":"Variant","multi":true,"description":"Which product details decide the design a product gets.","values":{"on_sale":"Whether the product is on sale.","price":"The product's price.","brand":"The product's brand.","category":"The product's category.","color":"The product's colour.","size":"The product's size.","gender":"The product's gender.","age_group":"The product's age group.","material":"The product's material.","product_id":"Specific product IDs.","custom_label":"A custom_label feed field.","newer_than":"How recently the product was added.","num_additional_images":"How many extra images the product has.","bg_status":"The product image's background status.","feed":"Which feed the product is from."}},"product_image_size":{"label":"Product image size in design","group":"Design","multi":true,"description":"How big the product images are in the design — the primary image and any additional images.","values":{"small":"The product images take up a small part of the frame.","medium":"The product images take up a medium part of the frame.","large":"The product images fill most of the frame."}},"product_placement":{"label":"Product placement in design","group":"Design","multi":true,"description":"Where the product image sits in the frame.","values":{"top":"The product image is at the top.","bottom":"The product image is at the bottom.","left":"The product image is on the left.","right":"The product image is on the right.","center":"The product image is in the centre.","full":"The product image fills the whole frame."}},"num_product_images":{"label":"Number of product images in design","group":"Design","multi":false,"description":"How many product images the design shows. 1 = only the primary image, 2 = primary plus one additional image.","valuesNote":"Values are counts."},"design_tags":{"label":"Design tags","group":"Design","multi":true,"description":"What's shown in the Confect design, on top of the product image.","values":{"price":"The product's price.","original_price":"The old price before a discount.","sale_discount":"A discount or % off.","savings":"How much is saved, e.g. 'Save $20'.","voucher_code":"A promo code, e.g. 'SUMMER20'.","logo":"The advertiser's logo.","cta":"A call-to-action, e.g. 'Shop now'.","name":"The product's name.","subheading":"A subheading, tagline or slogan.","description":"Product description text.","brand":"The product's brand.","category":"The product's category.","color":"The product's colour.","size":"The product's size.","material":"The product's material.","gender":"The target gender.","productid":"The product's ID.","custom_label":"A custom feed label.","date":"A date, day or countdown on the design, e.g. 'Ends Sunday', '2 days left', 'Offer ends 31 Dec', 'Valid until Friday', '48 hours only'.","new":"A 'New' badge.","bestseller":"A 'Bestseller' badge.","social_proof":"Reviews, ratings or stars, e.g. Trustpilot.","urgency_scarcity":"An urgency message, e.g. 'Last chance', 'Only 3 left'.","usp":"A selling point, e.g. 'Free gift', 'Fits all'.","free_shipping":"A free-shipping message.","shipping":"A shipping message.","delivery_speed":"A fast-delivery message, e.g. 'Next-day delivery'.","returns":"A returns message, e.g. '30-day returns'.","guarantee_quality":"A quality or guarantee message, e.g. '2-year warranty'.","buy_now_pay_later":"A pay-later message, e.g. Klarna.","payment":"A payment-options message.","inventory":"Stock info, e.g. 'In stock', 'Only 3 left'.","seasonal_holiday":"Seasonal or holiday styling on the design, e.g. Christmas, Halloween, summer or Black Friday visuals.","additional_image":"An extra product image, e.g. a second angle.","product_asset":"A brand graphic like a logo or badge, not a product photo.","product_video":"A product video.","animation":"A moving or animated element.","no_dynamic_text":"No dynamic text like price or name — only manual layers on top of the product image."}},"industry":{"label":"Industry","group":"Advertiser","multi":true,"description":"The advertiser's main line of business.","values":{"fashion":"Clothing, footwear, accessories.","beauty_health":"Beauty, personal care, health.","electronics":"Consumer electronics and tech.","home":"Home, furniture, garden.","food_drinks":"Food and drinks.","sports":"Sporting goods and activewear."}},"sub_industry":{"label":"Sub-industry","group":"Advertiser","multi":true,"description":"The advertiser's more specific product area.","values":{"womenswear":"Women's clothing.","menswear":"Men's clothing.","kids_baby_clothing":"Kids' and baby clothing.","outerwear":"Coats and jackets.","footwear":"Shoes.","sports_footwear":"Athletic shoes.","lingerie_underwear":"Lingerie and underwear.","workwear_uniforms":"Workwear and uniforms.","fashion_accessories":"Fashion accessories, e.g. belts, scarves, hats.","bags_luggage":"Bags and luggage.","jewelry":"Jewellery.","sportswear_activewear":"Athletic apparel.","sports_accessories":"Sports accessories and gear.","team_sports":"Team-sports equipment.","winter_sports":"Winter-sports gear.","water_sports":"Water-sports gear.","cycling":"Cycling gear.","outdoor_camping_hiking":"Camping and hiking gear.","hunting_fishing":"Hunting and fishing gear.","fitness_gym_equipment":"Fitness and gym equipment.","sports_nutrition":"Sports nutrition.","home_decor":"Home décor.","furniture":"Furniture.","lighting":"Lighting.","bedding_bath_textiles":"Bedding, bath and textiles.","kitchen_dining":"Kitchen and dining goods.","appliances":"Home appliances.","garden_outdoor":"Garden and outdoor goods.","diy_tools_hardware":"DIY tools and hardware.","arts_crafts_hobby":"Arts, crafts and hobbies.","office_stationery":"Office supplies and stationery.","party_seasonal":"Party and seasonal items.","toys_games":"Toys and games.","baby_gear":"Baby gear, e.g. strollers, car seats.","pet":"Pet products.","skincare":"Skincare.","cosmetics_makeup":"Makeup and cosmetics.","haircare":"Haircare.","fragrance":"Perfume and fragrance.","personal_care_hygiene":"Personal care and hygiene.","natural_organic_beauty":"Natural and organic beauty.","supplements_vitamins":"Supplements and vitamins.","pharmacy_otc":"Pharmacy and over-the-counter.","consumer_electronics":"Consumer electronics.","computers_it":"Computers and IT.","components_cables":"Components and cables.","mobile_accessories":"Phone accessories.","audio":"Audio gear, e.g. headphones, speakers.","tv_video":"TVs and video.","cameras_photo":"Cameras and photography.","wearables_tech":"Wearable tech, e.g. smartwatches.","gaming":"Video gaming.","automotive_moto":"Car and motorbike products.","media_books_music":"Books, music and media.","digital_services":"Digital services.","wine":"Wine.","beer_spirits":"Beer and spirits.","alcohol_gifts":"Alcohol gift sets.","soft_drinks_water":"Soft drinks and water.","coffee_tea":"Coffee and tea.","snacks_confectionery":"Snacks and sweets.","specialty_gourmet":"Specialty and gourmet food.","groceries":"Groceries.","health_food_organic":"Health and organic food.","meal_kits_prepared":"Meal kits and prepared meals.","travel_experiences":"Travel and experiences.","industrial_b2b":"Industrial and B2B goods.","gift_cards_vouchers":"Gift cards and vouchers.","tobacco_vape":"Tobacco and vaping.","adult":"Adult and sexual-wellness products.","unknown":"Products outside the listed categories."}},"shop_type":{"label":"Shop type","group":"Advertiser","multi":false,"description":"Whether the advertiser sells its own products or resells others'.","values":{"brand":"Sells its own products, e.g. Nike.","multi-brand retailer":"Resells other brands' products, e.g. Amazon."}},"price_level":{"label":"Price level","group":"Advertiser","multi":false,"description":"How expensive the brand's products are compared to competitors in its field.","values":{"affordable":"Cheaper than most competitors — budget, value pricing.","mid":"Around the middle of the market — typical pricing for its field.","high-end":"Pricier than most competitors — premium or luxury pricing."}},"catalog_size":{"label":"Products in catalog","group":"Advertiser","multi":false,"description":"How many products (SKUs, not colour or size variants) are in the advertiser's feed.","values":{"0-500":"Up to 500 products in catalog.","500-2k":"500 to 2,000 products in catalog.","2k+":"Over 2,000 products in catalog."}},"feed_richness":{"label":"Product fields in catalog","group":"Advertiser","multi":false,"description":"How complete the advertiser's product feed is.","values":{"few":"Minimum data — only the basic required fields.","medium":"An average amount of product data.","most":"A rich, high-quality feed with lots of product data."}},"advertiser_size":{"label":"Advertiser size","group":"Advertiser","multi":false,"description":"How much the advertiser spends on Meta each month, on average.","values":{"small":"Under $10k a month.","mid":"$10k to $50k a month.","big":"$50k a month or more."}},"campaign_investments":{"label":"Campaign investments (objectives)","group":"Advertiser","multi":true,"description":"Other kinds of Meta campaigns the advertiser runs, beyond conversion campaigns.","values":{"awareness":"Awareness and reach campaigns.","traffic":"Traffic (link-click) campaigns.","engagement":"Engagement campaigns.","leads":"Lead-generation campaigns.","app":"App-install campaigns."}},"aov_bucket":{"label":"AOV bucket ($)","group":"Advertiser","multi":false,"description":"The advertiser's average order value.","values":{"0-100":"Under $100.","100-200":"$100 to $200.","200+":"Over $200."}},"growth":{"label":"Growth trend","group":"Advertiser","multi":false,"description":"Which way the advertiser's revenue is trending.","values":{"detractor":"Revenue is shrinking over time.","slow grower":"Revenue is growing, above 0% and up to 100% a year.","fast grower":"Revenue is growing fast, 100% or more a year."}},"performance_group":{"label":"Performance group","group":"Advertiser","multi":false,"description":"How the advertiser's return on ad spend compares to similar advertisers.","values":{"bottom":"Lower return on ad spend than similar advertisers.","mid":"Average return on ad spend for similar advertisers.","top":"Higher return on ad spend than similar advertisers."}},"dpa_spend_group":{"label":"Catalog spend share","group":"Advertiser","multi":false,"description":"How much of the advertiser's Meta spend goes to catalog ads.","values":{"0-33%":"Under a third of Meta spend goes to catalog ads.","33-66%":"A third to two-thirds of Meta spend goes to catalog ads.","67%+":"Over two-thirds of Meta spend goes to catalog ads."}}}};
 function loadDesc(){ DESC=(DESC_DATA&&DESC_DATA.dimensions)||{}; }
@@ -216,7 +233,7 @@ async function boot(){
   const u=URL.createObjectURL(new Blob([`importScripts("${b.mainWorker}");`],{type:'text/javascript'}));
   db=new duckdb.AsyncDuckDB(new duckdb.ConsoleLogger(),new Worker(u)); await db.instantiate(b.mainModule,b.pthreadWorker); URL.revokeObjectURL(u);
   conn=await db.connect(); st('engine ready — waiting for file');
-  await loadDesc();
+  await loadDesc(); loadCustom(); rebuildDims();
   try{const r=await fetch('latest-confect-data.parquet'); if(r.ok) await load(new Uint8Array(await r.arrayBuffer()));}catch(e){}
 }
 $('pickBtn').onclick=()=>$('file').click();
@@ -259,8 +276,9 @@ function buildDim(d){
   let filled=false;
   function updBadge(){ const s=fstate[col]; const n=s.values.size; badge.textContent=n?((s.mode==='exclude'?'not ':'')+n):''; badge.style.display=n?'':'none'; hd.classList.toggle('active',!!n); }
   async function fill(){ if(filled)return; filled=true; vals.innerHTML='<span class="subttl">loading…</span>';
-    let q; try{ if(d[3]) q=await conn.query(`SELECT DISTINCT trim(t) v FROM (SELECT unnest(string_split(${col}, ',')) t FROM fact) WHERE trim(t)<>'' ORDER BY 1`);
-      else q=await conn.query(`SELECT DISTINCT ${col} v FROM fact WHERE ${col} IS NOT NULL AND ${col}<>'' ORDER BY 1 LIMIT 3000`);}catch(e){vals.innerHTML='err';return;}
+    const ce=(DMAP[col]&&DMAP[col].custom)?DMAP[col]._case:`"${col}"`;
+    let q; try{ if(d[3]&&!(DMAP[col]&&DMAP[col].custom)) q=await conn.query(`SELECT DISTINCT trim(t) v FROM (SELECT unnest(string_split(${col}, ',')) t FROM fact) WHERE trim(t)<>'' ORDER BY 1`);
+      else q=await conn.query(`SELECT DISTINCT ${ce} v FROM fact WHERE ${ce} IS NOT NULL AND ${ce}<>'' ORDER BY 1 LIMIT 3000`);}catch(e){vals.innerHTML='err';return;}
     vals.innerHTML='';
     const mk=(val,lab)=>{ const l=document.createElement('label'); l.dataset.v=String(lab).toLowerCase();
       const cb=document.createElement('input'); cb.type='checkbox'; cb.value=String(val); cb.checked=fstate[col].values.has(String(val));
@@ -283,7 +301,7 @@ function buildDim(d){
   return wrap;
 }
 async function buildExamples(){
-  for(const [col,,,multi] of DIMS){ try{
+  for(const [col,,,multi] of DIMS){ if(DMAP[col]&&DMAP[col].custom){continue;} try{
     let q; if(multi) q=await conn.query(`SELECT trim(t) v, count(*) c FROM (SELECT unnest(string_split(${col}, ',')) t FROM fact) WHERE trim(t)<>'' GROUP BY 1 ORDER BY c DESC LIMIT 5`);
     else q=await conn.query(`SELECT ${col} v, count(*) c FROM fact WHERE ${col} IS NOT NULL AND ${col}<>'' GROUP BY 1 ORDER BY c DESC LIMIT 5`);
     EX[col]=q.toArray().map(r=>String(r.v)).join(', ');
@@ -291,19 +309,46 @@ async function buildExamples(){
 }
 
 /* ---- SQL ---- */
-function grpExpr(col){ const m=DMAP[col];
+function grpExpr(col){ const m=DMAP[col]; if(m.custom) return m._case;
   return m.multi?`CASE WHEN trim(t_${col})='' THEN '${NONE}' ELSE trim(t_${col}) END`:`COALESCE(NULLIF("${col}",''),'${NONE}')`; }
-function presenceExpr(col,val){ const v=String(val).replace(/'/g,"''");
-  const has = DMAP[col].multi ? `(', '||COALESCE("${col}",'')||', ') LIKE '%, ${v}, %'` : `"${col}"='${v}'`;
+function presenceExpr(col,val){ const m=DMAP[col], v=String(val).replace(/'/g,"''");
+  const has = m.custom ? `(${m._case})='${v}'` : (m.multi ? `(', '||COALESCE("${col}",'')||', ') LIKE '%, ${v}, %'` : `"${col}"='${v}'`);
   return `CASE WHEN ${has} THEN '${v}' ELSE 'no ${v}' END`; }
-function fromClause(cols){ const parts=['fact']; cols.forEach(c=>{ if(DMAP[c].multi) parts.push(`unnest(string_split(CASE WHEN fact."${c}" IS NULL OR fact."${c}"='' THEN '${NONE}' ELSE fact."${c}" END, ',')) AS u_${c}(t_${c})`); }); return parts.join(', '); }
-function valClause(col,val){ const v=String(val).replace(/'/g,"''");   // NULL-safe "row has this value" (handles (none) + multi tokens)
-  if(val===NONE) return DMAP[col].multi?`COALESCE("${col}",'')=''`:`("${col}" IS NULL OR "${col}"='')`;
-  return DMAP[col].multi?`((', '||COALESCE("${col}",'')||', ') LIKE '%, ${v}, %')`:`("${col}" IS NOT DISTINCT FROM '${v}')`; }
+function fromClause(cols){ const parts=['fact']; cols.forEach(c=>{ if(DMAP[c].multi&&!DMAP[c].custom) parts.push(`unnest(string_split(CASE WHEN fact."${c}" IS NULL OR fact."${c}"='' THEN '${NONE}' ELSE fact."${c}" END, ',')) AS u_${c}(t_${c})`); }); return parts.join(', '); }
+function valClause(col,val){ const m=DMAP[col], v=String(val).replace(/'/g,"''");   // NULL-safe "row has this value"
+  if(m.custom) return `((${m._case})='${v}')`;
+  if(val===NONE) return m.multi?`COALESCE("${col}",'')=''`:`("${col}" IS NULL OR "${col}"='')`;
+  return m.multi?`((', '||COALESCE("${col}",'')||', ') LIKE '%, ${v}, %')`:`("${col}" IS NOT DISTINCT FROM '${v}')`; }
 function userWhere(except){ const cl=[GLOBAL];
   for(const col in fstate){ if(except&&col===except)continue; const f=fstate[col]; const sel=[...f.values]; if(!sel.length)continue;
     const ors='('+sel.map(v=>valClause(col,v)).join(' OR ')+')';
     cl.push(f.mode==='exclude'?`NOT ${ors}`:ors); } return cl; }
+/* ---- custom (session) dimensions & metrics ---- */
+function loadCustom(){ try{CDIMS=JSON.parse(sessionStorage.getItem('cae_cdims')||'[]');}catch(e){CDIMS=[];} try{CMETS=JSON.parse(sessionStorage.getItem('cae_cmets')||'[]');}catch(e){CMETS=[];} }
+function saveCustom(){ try{sessionStorage.setItem('cae_cdims',JSON.stringify(CDIMS));sessionStorage.setItem('cae_cmets',JSON.stringify(CMETS));}catch(e){} }
+function likeTok(s){ return String(s).toLowerCase().replace(/'/g,"''").replace(/[\\%_]/g,c=>'\\'+c); }
+function condSQL(c){ const toks=(c.text||'').split(',').map(s=>s.trim()).filter(Boolean); if(!toks.length||!c.col)return null;
+  return '('+toks.map(t=>`lower(COALESCE("${c.col}",'')) LIKE '%${likeTok(t)}%' ESCAPE '\\'`).join(' OR ')+')'; }
+function ruleSQL(r){ const cs=(r.conds||[]).map(condSQL).filter(Boolean); if(!cs.length)return null; return '('+cs.join(r.conn==='all'?' AND ':' OR ')+')'; }
+function dimCaseSQL(cd){ const q=s=>String(s==null?'':s).replace(/'/g,"''");
+  const whens=(cd.rules||[]).map(r=>{const p=ruleSQL(r); return p?`WHEN ${p} THEN '${q(r.label)}'`:null;}).filter(Boolean);
+  const els=`'${q(cd.otherwise||'Other')}'`; return whens.length?`CASE ${whens.join(' ')} ELSE ${els} END`:els; }
+function cdLabels(cd){ const s=new Set((cd.rules||[]).map(r=>r.label).filter(Boolean)); s.add(cd.otherwise||'Other'); return [...s]; }
+const _cmc={};
+function cmCompile(expr){ if(_cmc[expr])return _cmc[expr];
+  const safe=String(expr).replace(/\b(impressions|clicks|purchases|revenue|spend|advertisers|ads)\b/g,m=>({impressions:'i',clicks:'c',purchases:'p',revenue:'r',spend:'s',advertisers:'v',ads:'a'}[m]));
+  if(/[^0-9+\-*/(). icprsva]/.test(safe)) throw new Error('invalid characters');
+  const fn=new Function('i','c','p','r','s','a','v','return ('+safe+')'); _cmc[expr]=fn; return fn; }
+function cmEval(expr,g){ try{const v=cmCompile(expr)(g.impr||0,g.clk||0,g.pur||0,g.rev||0,g.sp||0,g.ads||0,g.adv||0); return (typeof v==='number'&&isFinite(v))?v:null;}catch(e){return null;} }
+function cellAgg(r){ return {impr:r.impr||0,clk:r.clk||0,pur:r.pur||0,sp:r.sp||0,rev:r.rev||0,ads:r.n_ads||0,adv:r.n_adv||0}; }
+function cmArr(cm){ return [cm.id,cm.label,cm.fmt,cm.hi!==false,null,null,null,{custom:true,expr:cm.expr}]; }
+function allMets(){ return METRICS.concat(CMETS.map(cmArr)); }
+function rebuildDims(){
+  DIMS=BASE_DIMS.concat(CDIMS.map(cd=>[cd.key,cd.label,'Custom',false]));
+  DMAP=Object.fromEntries(DIMS.map(d=>[d[0],{label:d[1],group:d[2],multi:d[3]}]));
+  CDIMS.forEach(cd=>{const m=DMAP[cd.key]; if(m){m.custom=true;m._case=dimCaseSQL(cd);} EX[cd.key]=cdLabels(cd).join(', '); fstate[cd.key]=fstate[cd.key]||{mode:'include',values:new Set()};});
+  GROUPS=CDIMS.length?['Ad','Advertiser','Custom','Design','Product set','Variant']:['Ad','Advertiser','Design','Product set','Variant'];
+}
 // ADVERTISER-BALANCED: each ad = (account_id, ad_id) pooled across months → per-advertiser MEDIAN of their ads → MEDIAN across advertisers.
 // Each advertiser gets one vote, so prolific advertisers can't dominate. Unit measured is still the ad (within each advertiser).
 function medianCTE(fromSQL,whereArr,gexprs){
@@ -312,7 +357,7 @@ function medianCTE(fromSQL,whereArr,gexprs){
   const advSel=METRICS.map(m=>`MEDIAN(${m[0]}) ${m[0]}`).join(', ');   // each advertiser's typical (median) ad
   const fSel=METRICS.map(m=>`MEDIAN(${m[0]}) ${m[0]}`).join(', ');     // median across advertisers
   const where='WHERE '+whereArr.join(' AND ');
-  const base=`SELECT ${gsel?gsel+', ':''}account_id, ad_id, SUM(impressions) impr,SUM(clicks) clk,SUM(purchase) pur,SUM(spend_usd) sp,SUM(revenue_usd) rev FROM ${fromSQL} ${where} GROUP BY ${graw?graw+', ':''}account_id, ad_id`;
+  const base=`SELECT ${gsel?gsel+', ':''}account_id, ad_id, SUM(impressions) impr,SUM(clicks) clk,SUM(purchase) pur,SUM(spend_usd) sp,SUM(revenue_usd) rev FROM ${fromSQL} ${where} GROUP BY ${graw?graw+', ':''}account_id, ad_id HAVING SUM(spend_usd)>=${FLOOR}`;
   return `WITH base AS (${base}), r AS (SELECT ${gk2}account_id, ${rSel} FROM base), adv AS (SELECT ${gk2}account_id, COUNT(*) ads, ${advSel} FROM r GROUP BY ${gk2}account_id) SELECT ${gk2}SUM(ads) n_ads, COUNT(*) n_adv, ${fSel} FROM adv ${gk?'GROUP BY '+gk:''}`;
 }
 // study totals over the AD universe (ads with spend>=FLOOR)
@@ -340,12 +385,19 @@ async function run(){
     sums=(await conn.query(sumsSQL(from,wh,gExprs))).toArray();
     // compare-by group AD-median baseline (for % within compare)
     const pRows=(await conn.query(medianCTE(parentFrom,wh,[g0expr]))).toArray();
-    parentMed={}; pRows.forEach(r=>{const o={}; METRICS.forEach(m=>o[m[0]]=r[m[0]]==null?null:Number(r[m[0]])); parentMed[String(r.g0)]=o;});
+    parentMed={}; groupCounts={}; pRows.forEach(r=>{const k=String(r.g0),o={}; METRICS.forEach(m=>o[m[0]]=r[m[0]]==null?null:Number(r[m[0]])); parentMed[k]=o; groupCounts[k]={ads:Number(r.n_ads),adv:Number(r.n_adv)};});
     // study totals over the ad universe + overall AD-median baseline (for % vs all)
     const t=(await conn.query(totalsSQL(wh))).toArray()[0];
     tot={ads:Number(t.n_ads),adv:Number(t.n_adv),sp:Number(t.s_sp),rev:Number(t.s_rev),impr:Number(t.s_impr),clk:Number(t.s_clk),pur:Number(t.s_pur)};
     const bMed=(await conn.query(medianCTE('fact',wh,[]))).toArray()[0];
     lastBaseMed={}; METRICS.forEach(m=>lastBaseMed[m[0]]=(bMed&&bMed[m[0]]!=null)?Number(bMed[m[0]]):null);
+    // custom-metric baselines: overall (for % vs all) and per compare-by group (for % within compare)
+    overallCM={}; parentCM={};
+    if(CMETS.length){
+      CMETS.forEach(cm=>overallCM[cm.id]=cmEval(cm.expr,{impr:tot.impr,clk:tot.clk,pur:tot.pur,sp:tot.sp,rev:tot.rev,ads:tot.ads,adv:tot.adv}));
+      if(spl){ const gs=(await conn.query(sumsSQL(parentFrom,wh,[g0expr]))).toArray();
+        gs.forEach(r=>{const k=String(r.g0),gc=groupCounts[k]||{}; const ag={impr:Number(r.s_impr),clk:Number(r.s_clk),pur:Number(r.s_pur),sp:Number(r.s_sp),rev:Number(r.s_rev),ads:gc.ads||0,adv:gc.adv||0}; parentCM[k]={}; CMETS.forEach(cm=>parentCM[k][cm.id]=cmEval(cm.expr,ag));}); }
+    }
   }catch(e){ st('query error: '+e.message); return; }
   const skey=r=>String(r.g0)+'|'+(spl?String(r.g1):'');
   const sm={}; sums.forEach(r=>sm[skey(r)]={sp:Number(r.s_sp),rev:Number(r.s_rev),impr:Number(r.s_impr),clk:Number(r.s_clk),pur:Number(r.s_pur)});
@@ -362,6 +414,8 @@ async function run(){
       cm.forEach(r=>{const w=String(r.g0); if(w===focus||w===NONE)return; const o={g0:focus+' + '+w,n_adv:Number(r.n_adv),n_ads:Number(r.n_ads)};METRICS.forEach(m=>o[m[0]]=r[m[0]]==null?null:Number(r[m[0]]));Object.assign(o,csm[w]||{});comboData.push(o);});
     }catch(e){}
   }
+  // ---- custom metrics: compute each row's value from its aggregates (pooled cell totals)
+  if(CMETS.length){ rowsData.forEach(r=>CMETS.forEach(cm=>r[cm.id]=cmEval(cm.expr,cellAgg(r)))); comboData.forEach(r=>CMETS.forEach(cm=>r[cm.id]=cmEval(cm.expr,cellAgg(r)))); }
   // ---- over-filtering advisor: when very narrow, measure how much each active filter is constraining the data
   advice=null;
   const activeCols=DIMS.map(d=>d[0]).filter(c=>fstate[c].values.size);
@@ -384,6 +438,12 @@ let parentMed={},advice=null,lastRendered=[],comboData=[],baseVals=null;
 function poolRatio(o,m){ if(!o)return null; const num=m[4]==='sp*1000'?o.sp*1000:o[m[4]]; const den=o[m[5]]; return (den&&den>0&&num!=null)?num/den:null; }
 function dispVal(r,m){
   if(mode==='raw') return r[m[0]];
+  if(m[7]&&m[7].custom){   // custom metric — pooled; baseline = overall (pct) or compare-by group (pctin)
+    const v=r[m[0]];
+    if(mode==='base'){ const b=baseVals?baseVals[m[0]]:null; return (v==null||b==null||b===0)?null:(v/b-1)*100; }
+    if(mode==='pct'){ const b=overallCM[m[0]]; return (v==null||b==null||b===0)?null:(v/b-1)*100; }
+    if(!spl) return null; const b=parentCM[r.g0]?parentCM[r.g0][m[0]]:null; return (v==null||b==null||b===0)?null:(v/b-1)*100;
+  }
   // baseline — every row's median vs the chosen baseline row's median (baseline row reads 0%)
   if(mode==='base'){ if(!baseVals)return null; const b=baseVals[m[0]],v=r[m[0]]; return (v==null||b==null||b===0)?null:(v/b-1)*100; }
   // % vs all — cell MEDIAN vs overall MEDIAN (same statistic as Raw, so the % matches the numbers shown)
@@ -393,7 +453,7 @@ function dispVal(r,m){
 }
 function noneLast(a,b){ const an=a===NONE,bn=b===NONE; if(an&&!bn)return 1; if(bn&&!an)return -1; return String(a).localeCompare(String(b),undefined,{numeric:true}); }
 let sortCol=null, sortDir='desc';   // persists across renders/filters until reset (3rd click)
-function sortVal(r,col){ if(col==='g0')return r.g0; if(col==='g1')return r.g1; if(col==='n_ads')return r.n_ads; if(col==='n_adv')return r.n_adv; const m=METRICS.find(x=>x[0]===col); return m?dispVal(r,m):null; }
+function sortVal(r,col){ if(col==='g0')return r.g0; if(col==='g1')return r.g1; if(col==='n_ads')return r.n_ads; if(col==='n_adv')return r.n_adv; const m=allMets().find(x=>x[0]===col); return m?dispVal(r,m):null; }
 function gcmp(x,y,dir){ const an=x===NONE,bn=y===NONE; if(an&&!bn)return 1; if(bn&&!an)return -1; return dir*String(x).localeCompare(String(y),undefined,{numeric:true}); } // (none) always last, alpha follows dir
 function sortRows(rows,g1){
   if(!sortCol||(sortCol==='g1'&&!g1)){ rows.sort((a,b)=>noneLast(a.g0,b.g0)||(g1?noneLast(a.g1,b.g1):0)); return; }
@@ -408,24 +468,25 @@ function render(){
   const minAds=+$('minAds').value,minAdv=+$('minAdv').value,g1=!!spl;
   // resolve the baseline row's metric values (or drop baseline if its row is gone)
   baseVals=null;
+  const METS=allMets();
   if(baseline){ const br=rowsData.find(r=>r.g0===baseline.g0 && String(r.g1)===String(baseline.g1));
-    if(br){ baseVals={}; METRICS.forEach(m=>baseVals[m[0]]=br[m[0]]); }
+    if(br){ baseVals={}; METS.forEach(m=>baseVals[m[0]]=br[m[0]]); }
     else { baseline=null; if(mode==='base')mode='raw'; } }
   if(mode==='base')['mRaw','mPct','mPctIn'].forEach(id=>$(id).classList.remove('on'));  // no seg button reflects baseline mode
   let rows=rowsData.filter(r=>r.n_ads>=minAds&&r.n_adv>=minAdv);
   sortRows(rows,g1);
   // color scale
-  const scales=METRICS.map(m=>{ if(mode!=='raw')return null; const vs=rows.map(r=>{const v=r[m[0]];return v==null?null:(m[3]?v:-v);}).filter(v=>v!=null&&isFinite(v));return{min:Math.min(...vs),max:Math.max(...vs)};});
+  const scales=METS.map(m=>{ if(mode!=='raw')return null; const vs=rows.map(r=>{const v=r[m[0]];return v==null?null:(m[3]?v:-v);}).filter(v=>v!=null&&isFinite(v));return{min:Math.min(...vs),max:Math.max(...vs)};});
   let h='<table><thead><tr>';
   const arr=c=>sortCol===c?`<span class="sarr">${sortDir==='asc'?'▲':'▼'}</span>`:'';
   h+=`<th class="grp" data-col="g0" title="${escA(dimDesc(cmp))}">${DMAP[cmp].label}${arr('g0')}</th>`; if(g1)h+=`<th class="grp" data-col="g1" title="${escA(dimDesc(spl))}">${DMAP[spl].label}${arr('g1')}</th>`;
-  METRICS.forEach(m=>h+=`<th data-col="${m[0]}">${m[1]}${arr(m[0])}</th>`); h+=`<th data-col="n_ads" style="color:var(--mut)">ads${arr('n_ads')}</th><th data-col="n_adv" style="color:var(--mut)">advertisers${arr('n_adv')}</th></tr></thead><tbody>`;
+  METS.forEach(m=>h+=`<th data-col="${m[0]}"${m[7]&&m[7].custom?' style="color:var(--accent)"':''}>${m[1]}${arr(m[0])}</th>`); h+=`<th data-col="n_ads" style="color:var(--mut)">ads${arr('n_ads')}</th><th data-col="n_adv" style="color:var(--mut)">advertisers${arr('n_adv')}</th></tr></thead><tbody>`;
   const clickable=(focus==null), clickable1=(g1&&focusSpl==null);
   const act=(col,v,axis)=>{const vd=valDesc(col,v); return ` class="grp act" data-cmc="${col}" data-cmv="${encodeURIComponent(v)}" data-axis="${axis}" title="${vd?escA(vd)+' · ':''}Click for options: deep dive, keep, exclude"`;};
   const gattr=(col,v,clk,axis)=>clk?act(col,v,axis):` class="grp"${valDesc(col,v)?` title="${escA(valDesc(col,v))}"`:''}`;
   lastRendered=rows;
   const body=rows.map((r,ri)=>{const isBase=baseline&&r.g0===baseline.g0&&String(r.g1)===String(baseline.g1); let tr=`<tr data-ri="${ri}"${isBase?' class="baserow"':''}>`; tr+=`<td${gattr(cmp,r.g0,clickable,'cmp')}>${esc(r.g0)}</td>`; if(g1)tr+=`<td${gattr(spl,r.g1,clickable1,'spl')}>${esc(r.g1)}</td>`;
-    METRICS.forEach((m,i)=>{const dv=dispVal(r,m); const score=dv==null?null:(m[3]?dv:-dv);
+    METS.forEach((m,i)=>{const dv=dispVal(r,m); const score=dv==null?null:(m[3]?dv:-dv);
       const bg = mode==='raw'?colorRaw(score,scales[i]):colorDiv(score);
       tr+=`<td style="background:${bg}">${mode==='raw'?fmt(r[m[0]],m[2]):fmtPct(dv)}</td>`;});
     tr+=`<td style="color:var(--mut)">${(r.n_ads||0).toLocaleString()}</td><td style="color:var(--mut)">${(r.n_adv||0).toLocaleString()}</td></tr>`;
@@ -441,11 +502,11 @@ function render(){
   if(comboData.length){
     let crows=comboData.filter(r=>r.n_ads>=minAds&&r.n_adv>=minAdv); sortRows(crows,false);   // mirror the main table's sort
     if(crows.length){
-      const cscales=METRICS.map(m=>{ if(mode!=='raw')return null; const vs=crows.map(r=>{const v=r[m[0]];return v==null?null:(m[3]?v:-v);}).filter(v=>v!=null&&isFinite(v));return{min:Math.min(...vs),max:Math.max(...vs)};});
+      const cscales=METS.map(m=>{ if(mode!=='raw')return null; const vs=crows.map(r=>{const v=r[m[0]];return v==null?null:(m[3]?v:-v);}).filter(v=>v!=null&&isFinite(v));return{min:Math.min(...vs),max:Math.max(...vs)};});
       let ch='<table><thead><tr><th class="grp">Combination</th>';
-      METRICS.forEach(m=>ch+=`<th>${m[1]}</th>`); ch+='<th style="color:var(--mut)">ads</th><th style="color:var(--mut)">advertisers</th></tr></thead><tbody>';
+      METS.forEach(m=>ch+=`<th${m[7]&&m[7].custom?' style="color:var(--accent)"':''}>${m[1]}</th>`); ch+='<th style="color:var(--mut)">ads</th><th style="color:var(--mut)">advertisers</th></tr></thead><tbody>';
       crows.forEach(r=>{ch+='<tr><td class="grp">'+esc(r.g0)+'</td>';
-        METRICS.forEach((m,i)=>{const dv=dispVal(r,m),score=dv==null?null:(m[3]?dv:-dv),bg=mode==='raw'?colorRaw(score,cscales[i]):colorDiv(score);ch+=`<td style="background:${bg}">${mode==='raw'?fmt(r[m[0]],m[2]):fmtPct(dv)}</td>`;});
+        METS.forEach((m,i)=>{const dv=dispVal(r,m),score=dv==null?null:(m[3]?dv:-dv),bg=mode==='raw'?colorRaw(score,cscales[i]):colorDiv(score);ch+=`<td style="background:${bg}">${mode==='raw'?fmt(r[m[0]],m[2]):fmtPct(dv)}</td>`;});
         ch+=`<td style="color:var(--mut)">${(r.n_ads||0).toLocaleString()}</td><td style="color:var(--mut)">${(r.n_adv||0).toLocaleString()}</td></tr>`;});
       ch+='</tbody></table>';
       comboHtml=`<div class="combosep"></div><div class="subttl" style="margin:2px 0 8px"><b>Combinations with “${esc(focus)}”</b> — how ${esc(focus)} performs together with each other ${esc(DMAP[cmp].label)} value</div>`+ch;
@@ -522,8 +583,8 @@ function showCtx(x,y,col,val,axis,ri){ const m=$('ctx'); const disp=val;
 // raw metric block (always the underlying advertiser-balanced medians) + selected-mode block + raw counts.
 function rawCell(r,m){ const v=r[m[0]]; if(v==null||!isFinite(v))return ''; return m[2]==='rate'?(v*100).toFixed(3)+'%':v.toFixed(4); }
 function selCell(r,m){ if(mode==='raw')return rawCell(r,m); const p=dispVal(r,m); return (p==null||!isFinite(p))?'':p.toFixed(2)+'%'; }
-function metricHead(){ const h=[]; METRICS.forEach(m=>h.push(m[1])); METRICS.forEach(m=>h.push(m[1]+' (selected)')); h.push('ads','advertisers','spend_usd','revenue_usd','impressions','clicks','purchases'); return h; }
-function metricCells(r){ const c=[]; METRICS.forEach(m=>c.push(rawCell(r,m))); METRICS.forEach(m=>c.push(selCell(r,m))); c.push(r.n_ads,r.n_adv,Math.round(r.sp||0),Math.round(r.rev||0),r.impr||0,r.clk||0,r.pur||0); return c; }
+function metricHead(){ const M=allMets(),h=[]; M.forEach(m=>h.push(m[1])); M.forEach(m=>h.push(m[1]+' (selected)')); h.push('ads','advertisers','spend_usd','revenue_usd','impressions','clicks','purchases'); return h; }
+function metricCells(r){ const M=allMets(),c=[]; M.forEach(m=>c.push(rawCell(r,m))); M.forEach(m=>c.push(selCell(r,m))); c.push(r.n_ads,r.n_adv,Math.round(r.sp||0),Math.round(r.rev||0),r.impr||0,r.clk||0,r.pur||0); return c; }
 function copyRow(i){ const r=lastRendered[i]; if(!r)return; const g1=!!spl;
   const head=[DMAP[cmp].label]; if(g1)head.push(DMAP[spl].label); head.push(...metricHead());
   const row=[r.g0]; if(g1)row.push(r.g1); row.push(...metricCells(r));
@@ -647,6 +708,59 @@ function copySheets(){
   }
   navigator.clipboard.writeText(L.join('\n')).then(()=>{const b=$('copy'),o=b.textContent;b.textContent='✓ Copied';setTimeout(()=>b.textContent=o,1500);});
 }
+/* ---- custom fields builder (session) ---- */
+const DVALS={};
+async function fetchDistinct(col){ if(DVALS[col])return DVALS[col]; const m=DMAP[col]||{};
+  try{ const q=m.multi?`SELECT DISTINCT trim(t) v FROM (SELECT unnest(string_split(${col}, ',')) t FROM fact) WHERE trim(t)<>'' ORDER BY 1`:`SELECT DISTINCT ${col} v FROM fact WHERE ${col} IS NOT NULL AND ${col}<>'' ORDER BY 1 LIMIT 500`;
+    DVALS[col]=(await conn.query(q)).toArray().map(r=>String(r.v)); }catch(e){DVALS[col]=[];}
+  return DVALS[col]; }
+function ensureDatalist(col){ if(document.getElementById('dl_'+col))return; fetchDistinct(col).then(vs=>{ if(document.getElementById('dl_'+col))return; const dl=document.createElement('datalist'); dl.id='dl_'+col; dl.innerHTML=vs.map(v=>`<option value="${escA(v)}"></option>`).join(''); document.body.appendChild(dl); }); }
+function baseColOptions(sel){ return ['Ad','Advertiser','Design','Product set','Variant'].map(g=>{
+    const items=BASE_DIMS.filter(d=>d[2]===g).sort((a,b)=>a[1].localeCompare(b[1])); if(!items.length)return'';
+    return `<optgroup label="${g}">`+items.map(d=>`<option value="${d[0]}"${d[0]===sel?' selected':''}>${esc(d[1])}</option>`).join('')+`</optgroup>`; }).join(''); }
+function condRowHTML(c){ c=c||{col:'theme',text:''}; return `<div class="crow cond"><select class="c-col">${baseColOptions(c.col)}</select> contains <input type="text" class="c-text" list="dl_${c.col}" placeholder="holiday, sale  (comma = OR)" value="${escA(c.text||'')}" style="min-width:220px"><span class="cx c-condx" title="remove">✕</span></div>`; }
+function ruleBlockHTML(r){ r=r||{label:'',conn:'any',conds:[{col:'theme',text:''}]}; return `<div class="cbox rule"><div class="crow">Label <input type="text" class="r-label" value="${escA(r.label||'')}" placeholder="e.g. Black Friday" style="min-width:160px"> · match <select class="r-conn"><option value="any"${r.conn!=='all'?' selected':''}>ANY condition</option><option value="all"${r.conn==='all'?' selected':''}>ALL conditions</option></select> <span class="cx r-rulex" title="remove rule">✕ rule</span></div><div class="r-conds">${(r.conds||[{col:'theme',text:''}]).map(condRowHTML).join('')}</div><button class="cbtn r-addcond" type="button">＋ condition</button></div>`; }
+function drawCustom(){ const b=$('cmodalBody'); let h='';
+  h+=`<div class="csec">Custom dimensions</div>`;
+  h+= CDIMS.length?`<div class="clist">`+CDIMS.map(cd=>`<div class="crow"><b>${esc(cd.label)}</b> <span class="subttl">→ ${esc(cdLabels(cd).join(' / '))}</span><span style="flex:1"></span><span class="cx cd-del" data-k="${cd.key}">Delete</span></div>`).join('')+`</div>`:`<div class="chint">None yet.</div>`;
+  h+=`<div class="cbox"><h4>New dimension</h4>
+    <div class="crow">Name <input type="text" id="nd-name" placeholder="e.g. Black Friday related" style="min-width:220px"></div>
+    <div class="chint">A row takes the first matching rule's label, else the otherwise label. Add rules for extra buckets or OR-logic (two rules with the same label = OR).</div>
+    <div id="nd-rules">${ruleBlockHTML()}</div>
+    <button class="cbtn" id="nd-addrule" type="button">＋ rule</button>
+    <div class="crow" style="margin-top:10px">Otherwise (rows matching no rule) <input type="text" id="nd-else" value="Other" style="min-width:140px"></div>
+    <div style="margin-top:8px"><button class="cbtn" id="nd-save" type="button" style="color:#fff;background:var(--accent);border-color:var(--accent)">Save dimension</button></div></div>`;
+  h+=`<div class="csec">Custom metrics</div>`;
+  h+= CMETS.length?`<div class="clist">`+CMETS.map(cm=>`<div class="crow"><b>${esc(cm.label)}</b> <span class="subttl">= ${esc(cm.expr)}</span><span style="flex:1"></span><span class="cx cm-del" data-i="${cm.id}">Delete</span></div>`).join('')+`</div>`:`<div class="chint">None yet.</div>`;
+  h+=`<div class="cbox"><h4>New metric</h4>
+    <div class="crow">Name <input type="text" id="nm-name" placeholder="e.g. Impressions per ad" style="min-width:200px"></div>
+    <div class="crow">Formula <input type="text" id="nm-expr" placeholder="impressions / ads" style="min-width:300px"></div>
+    <div class="chint">Variables: impressions, clicks, purchases, spend, revenue, ads, advertisers · operators + − * / ( ). Pooled cell totals; also shown as % under the % modes. Examples: revenue / clicks · impressions / ads · ads / advertisers</div>
+    <div class="crow">Format <select id="nm-fmt"><option value="num">Number</option><option value="money">Money ($)</option><option value="rate">Percent (%)</option></select> · <label style="cursor:pointer"><input type="checkbox" id="nm-hi" checked> higher is better</label></div>
+    <div style="margin-top:8px"><button class="cbtn" id="nm-save" type="button" style="color:#fff;background:var(--accent);border-color:var(--accent)">Save metric</button></div></div>`;
+  b.innerHTML=h; b.querySelectorAll('select.c-col').forEach(sel=>ensureDatalist(sel.value)); wireCustom(); }
+function wireCustom(){ const b=$('cmodalBody');
+  b.querySelectorAll('.cd-del').forEach(e=>e.onclick=()=>{const k=e.dataset.k; CDIMS=CDIMS.filter(c=>c.key!==k); if(fstate[k])fstate[k].values.clear(); if(cmp===k)cmp='design_tags'; if(spl===k)spl=''; afterCustomChange();});
+  b.querySelectorAll('.cm-del').forEach(e=>e.onclick=()=>{const i=e.dataset.i; CMETS=CMETS.filter(c=>c.id!==i); afterCustomChange();});
+  b.querySelectorAll('.c-col').forEach(sel=>sel.onchange=()=>{ensureDatalist(sel.value); const inp=sel.parentElement.querySelector('.c-text'); if(inp)inp.setAttribute('list','dl_'+sel.value);});
+  b.querySelectorAll('.c-condx').forEach(e=>e.onclick=()=>{const holder=e.closest('.r-conds'); if(holder.querySelectorAll('.cond').length>1)e.closest('.cond').remove();});
+  b.querySelectorAll('.r-addcond').forEach(btn=>btn.onclick=()=>{const holder=btn.previousElementSibling; const tmp=document.createElement('div'); tmp.innerHTML=condRowHTML(); holder.appendChild(tmp.firstElementChild); wireCustom();});
+  b.querySelectorAll('.r-rulex').forEach(e=>e.onclick=()=>{if($('nd-rules').querySelectorAll('.rule').length>1)e.closest('.rule').remove();});
+  const ar=$('nd-addrule'); if(ar)ar.onclick=()=>{const tmp=document.createElement('div');tmp.innerHTML=ruleBlockHTML();$('nd-rules').appendChild(tmp.firstElementChild);wireCustom();};
+  const ds=$('nd-save'); if(ds)ds.onclick=saveDimFromForm; const ms=$('nm-save'); if(ms)ms.onclick=saveMetFromForm; }
+function readRule(el){ const conds=[...el.querySelectorAll('.cond')].map(c=>({col:c.querySelector('.c-col').value,text:c.querySelector('.c-text').value.trim()})).filter(c=>c.text);
+  return {label:(el.querySelector('.r-label').value.trim()||'match'),conn:el.querySelector('.r-conn').value,conds}; }
+function saveDimFromForm(){ const name=$('nd-name').value.trim(); if(!name){st('name the dimension');return;}
+  const rules=[...$('nd-rules').querySelectorAll('.rule')].map(readRule).filter(r=>r.conds.length);
+  if(!rules.length){st('add at least one condition with text');return;}
+  CDIMS.push({key:'cd_'+Date.now().toString(36),label:name,otherwise:($('nd-else').value.trim()||'Other'),rules}); afterCustomChange(); }
+function saveMetFromForm(){ const name=$('nm-name').value.trim(), expr=$('nm-expr').value.trim(); if(!name||!expr){st('name and formula required');return;}
+  try{cmCompile(expr);}catch(e){st('invalid formula: '+e.message);return;}
+  CMETS.push({id:'cm_'+Date.now().toString(36),label:name,expr,fmt:$('nm-fmt').value,hi:$('nm-hi').checked}); afterCustomChange(); }
+function afterCustomChange(){ saveCustom(); rebuildDims(); buildSidebar(); drawCustom(); $('cmpLab').textContent=DMAP[cmp]?DMAP[cmp].label:cmp; $('splLab').textContent=(spl&&DMAP[spl])?DMAP[spl].label:'— none —'; run(); }
+$('customBtn').onclick=()=>{ if(!loaded){st('load a dataset first');return;} drawCustom(); $('cmodal').classList.add('open'); };
+$('cmodalClose').onclick=()=>$('cmodal').classList.remove('open');
+$('cmodal').onclick=e=>{if(e.target.id==='cmodal')$('cmodal').classList.remove('open');};
 $('copy').onclick=copySheets;
 boot();
 </script>
