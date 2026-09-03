@@ -469,10 +469,37 @@ function parseNum(s){ if(s==null)return null; s=(''+s).trim();
 function metricKey(h){const m=h.trim().match(/^[A-Za-z_]+/);return m?m[0]:h.trim();}
 const CORE_ORDER=['ROAS','CPA','CTR','CVR','CPC','CPM','AOV'];
 // Recognise a core-metric column (absolute or "(selected)"/"%Δ" delta variant).
-function coreOf(h){const base=h.replace(/\s*\(selected\)\s*$/i,'').replace(/\s*%Δ\s*$/,'').trim();const key=metricKey(base);
+function coreOf(h){const base=h.replace(/\s*\(selected\)\s*$/i,'').replace(/\s*%Δ\s*$/,'').trim();
+  // must be the core name optionally followed ONLY by parenthetical unit tags, e.g. "AOV ($)" —
+  // NOT a dimension column that merely starts with a core name, e.g. "AOV bucket ($)".
+  const m=base.match(/^([A-Za-z_]+)((?:\s*\([^)]*\))*)$/); if(!m)return null;
+  const key=m[1];
   if(METRIC_META[key])return{coreId:key,isDelta:/\(selected\)/i.test(h)||/%Δ/.test(h)};return null;}
 function isCountHeader(h){return COUNT_SET.has(h.trim());}
 function isMetricHeader(h){return !!coreOf(h)||isCountHeader(h)||/[%Δ]/.test(h);}
+/* Dollar-denominated numeric-range dimensions (e.g. "AOV bucket ($)") — raw values like "0-100"/"100-200"/"200+"
+   read far better as "Below $100"/"$100 to $200"/"Above $200". Scoped to dimension columns whose header names a
+   "$" unit; only relabels values that actually look like a numeric range, so every other dimension is untouched. */
+function isDollarRangeDim(header){return /\$/.test(''+(header||''));}
+function bucketRangeNum(s){return Number((''+s).replace(/[$,\s]/g,''));}
+function bucketRangeLabel(raw){
+  const s=(''+raw).trim(); if(!s)return null;
+  let m=s.match(/^\$?\s*([\d,]+(?:\.\d+)?)\s*\+$/);
+  if(m)return 'Above $'+nfmt(bucketRangeNum(m[1]),0);
+  m=s.match(/^\$?\s*([\d,]+(?:\.\d+)?)\s*(?:-|–|—|to)\s*\$?\s*([\d,]+(?:\.\d+)?)$/i);
+  if(m){const lo=bucketRangeNum(m[1]),hi=bucketRangeNum(m[2]);
+    if(!isFinite(lo)||!isFinite(hi))return null;
+    if(lo===0)return 'Below $'+nfmt(hi,0);
+    return '$'+nfmt(lo,0)+' to $'+nfmt(hi,0);
+  }
+  return null;
+}
+// Applied per (dimension header, raw value) pair while parsing rows — the one place both are known unambiguously.
+function bucketRelabel(header,value){
+  if(!value||!isDollarRangeDim(header))return value;
+  const label=bucketRangeLabel(value);
+  return label!=null?label:value;
+}
 function parseData(raw){
   const lines=raw.replace(/\r/g,'').split('\n').filter(l=>l.trim().length);
   if(!lines.length)throw new Error('No data found.');
@@ -507,7 +534,7 @@ function parseData(raw){
   for(let i=headerIdx+1;i<lines.length;i++){ const l=lines[i];
     if(skipLine(l))continue;
     const c=l.split('\t'); if(c.length<header.length-1)continue;
-    const dv=dims.map((d,di)=>c[di]!=null?c[di].trim():''); if(dv.every(v=>v===''))continue;
+    const dv=dims.map((d,di)=>{const v=c[di]!=null?c[di].trim():'';return bucketRelabel(d,v);}); if(dv.every(v=>v===''))continue;
     const mv={}; for(let col=firstMetric;col<header.length;col++)mv[header[col]]=parseNum(c[col]);
     if(Object.keys(mv).every(k=>mv[k]==null))continue;                 // skips repeated header rows (e.g. "Combination  ROAS  …")
     const key=dv.join(' + '); if(seen.has(key))continue; seen.add(key);
