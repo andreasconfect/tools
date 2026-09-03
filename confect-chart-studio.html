@@ -17,8 +17,9 @@
   --subtitle:#707070; --axis:#707070; --grid:#ECEAF1; --pagebg:#F5F4F8;
 }
 *{box-sizing:border-box}
-html,body{margin:0;height:100%;font-family:'Lexend Deca',system-ui,sans-serif;color:var(--ink);background:var(--pagebg)}
-body{display:flex;flex-direction:column}
+html{margin:0}
+body{margin:0;min-height:100%;font-family:'Lexend Deca',system-ui,sans-serif;color:var(--ink);background:var(--pagebg)}
+.editorViewport{height:100vh;display:flex;flex-direction:column;min-height:0}   /* keeps the editor exactly as before; gallery lives below it, page scrolls */
 header.appbar{display:flex;align-items:center;gap:12px;padding:10px 18px;background:#fff;border-bottom:1px solid #E6E3EC}
 header.appbar .brand{font-weight:400;font-size:16px;color:var(--ink)}
 header.appbar .brand b{color:var(--ink);font-weight:700}
@@ -46,7 +47,22 @@ header.appbar .tag{font-size:12px;color:var(--subtitle);background:#F1EEF8;borde
 .tsel{font-size:12px;font-weight:400;border:1px solid #DDD8E6;border-radius:8px;padding:5px 8px;background:#fff;width:auto}
 .tgroup{display:flex;align-items:center;gap:5px}
 .tgroup .lab{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--subtitle);font-weight:400}
-.popover{position:absolute;top:46px;right:14px;z-index:30;background:#fff;border:1px solid #DDD8E6;border-radius:10px;box-shadow:0 8px 26px rgba(45,39,51,.16);padding:12px;width:230px;display:none}
+/* "Share" dropdown — Load/Download/Copy PNG/Export PNG as icon+label rows, Canva-share-button style but
+   themed to match the rest of the app; reuses .popover for the container (same as #expPop). */
+.popover.sharePanel{padding:7px;width:240px}   /* two classes so this reliably beats .popover's own width, regardless of source order */
+.shareRow{display:flex;align-items:center;gap:10px;width:100%;padding:9px 10px;border:none;background:none;
+  border-radius:8px;font-family:inherit;font-size:13px;color:var(--ink);cursor:pointer;text-align:left}
+.shareRow:hover{background:#F6F0FD;color:var(--purple)}
+.shareIcon{width:18px;flex:none;text-align:center;font-size:14px;color:var(--purple)}
+.shareText{display:flex;flex-direction:column;gap:1px;min-width:0}
+.shareLabel{font-size:13px;color:var(--ink)}
+.shareRow:hover .shareLabel{color:var(--purple)}
+.shareSub{font-size:11px;color:var(--subtitle);line-height:1.3;white-space:normal}
+.shareRow:hover .shareSub{color:var(--subtitle)}   /* subtext stays muted even when the row highlights */
+/* position:fixed with JS-computed left/top (positionGalleryCardMenu(), reused — see its own comment) rather
+   than a static top/right — with three trigger buttons (Data/Share/gear) now clustered together, a fixed
+   corner position would let whichever popover is open visually cover the OTHER triggers and swallow clicks. */
+.popover{position:fixed;z-index:30;background:#fff;border:1px solid #DDD8E6;border-radius:10px;box-shadow:0 8px 26px rgba(45,39,51,.16);padding:12px;width:230px;display:none}
 .popover.open{display:block}
 .nm-edit{flex:1;border:1px solid transparent;border-radius:5px;padding:2px 4px;font:inherit;font-size:12px;background:transparent;min-width:0}
 .nm-edit:hover{border-color:#E4DEF3;background:#FAF8FE}
@@ -74,6 +90,7 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--purple);
   border-radius:8px;padding:8px 12px;border:1px solid transparent;cursor:pointer}
 .btn.primary{background:var(--purple);color:#fff}.btn.primary:hover{background:#8544c9}
 .btn.ghost{background:#fff;color:var(--ink);border-color:#DDD8E6}.btn.ghost:hover{border-color:var(--purple);color:var(--purple)}
+.btn.danger{background:#E5484D;color:#fff}.btn.danger:hover{background:#C93B40}
 .btn.sm{padding:5px 9px;font-size:12px}
 .row{display:flex;gap:8px;flex-wrap:wrap}.row>*{flex:1}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
@@ -91,10 +108,17 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--purple);
 .rlist li.dragging{opacity:.4}.rlist li.over{background:#F6F0FD}
 .rlist li .grip{color:#C7C1D3;cursor:grab}
 .rlist li .sw{width:12px;height:12px;border-radius:3px;flex:none;border:1px solid rgba(0,0,0,.08)}
+.rlist li .sw[data-swatch]{cursor:pointer}
+.rlist li .sw[data-swatch]:hover{outline:2px solid #DDD8E6;outline-offset:1px}
 .rlist li input[type=checkbox]{width:auto;margin:0}
 .rlist li .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.rlist li .val{color:var(--subtitle);font-variant-numeric:tabular-nums}
+.rlist li .val{color:var(--subtitle);font-variant-numeric:tabular-nums;cursor:pointer}
+.rlist li .val:hover{color:var(--purple)}
+.rlist li .val.labelOff{opacity:.4;text-decoration:line-through}
 .rlist li .rm{color:#C7C1D3;cursor:pointer;font-weight:400}
+.rlist li .resetSwatch{flex:none;color:#DDD8E6;cursor:pointer;font-size:13px;line-height:1}
+.rlist li .resetSwatch.active{color:#9A93A8}
+.rlist li .resetSwatch:hover{color:var(--purple)}
 .hint{font-size:11px;color:var(--subtitle);margin-top:6px;line-height:1.4}
 .toggle{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:400;margin:8px 0}
 .toggle input{width:auto}
@@ -104,24 +128,87 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--purple);
 .seg button.on{background:var(--purple);color:#fff}
 .fieldgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .inline{display:flex;gap:8px;align-items:center}.inline label{margin:0}
+/* project save/load + gallery */
+#exportVeil{position:absolute;inset:0;z-index:40;display:none;align-items:center;justify-content:center;background:var(--pagebg);font-size:13px;color:var(--subtitle)}
+/* on-brand confirm dialog — replaces native confirm(), see confirmDialog() */
+.confirmOverlay{position:fixed;inset:0;z-index:500;background:rgba(30,32,56,.45);display:none;align-items:center;justify-content:center;padding:20px}
+.confirmOverlay.open{display:flex}
+.confirmBox{background:#fff;border-radius:14px;box-shadow:0 20px 60px rgba(30,32,56,.35);padding:22px 22px 18px;width:320px;max-width:100%;animation:confirmIn .15s ease-out}
+@keyframes confirmIn{from{opacity:0;transform:translateY(6px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+.confirmTitle{font-size:15px;font-weight:700;color:var(--ink);margin:0 0 6px}
+.confirmMsg{font-size:13px;color:var(--subtitle);line-height:1.5;margin:0}
+.confirmBtns{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
+body.dragging-file::after{content:'Drop a .confectchart.json file to load it';position:fixed;inset:10px;z-index:9999;border:3px dashed var(--purple);
+  border-radius:16px;background:rgba(152,82,219,.06);display:flex;align-items:center;justify-content:center;font-size:16px;color:var(--purple);pointer-events:none}
+/* compact, always-visible strip — lives inside .stagewrap so it shares the canvas's left offset
+   (starts after the 288px side nav, never runs under it) and never needs the page itself to scroll */
+.gallerySection{flex:none;display:flex;flex-direction:column;min-height:0;background:#fff;border-top:1px solid #E6E3EC}
+.galleryHead{display:flex;align-items:center;gap:8px;padding:8px 14px 0}
+.galleryHead[hidden]{display:none}   /* explicit override — author display:flex above would otherwise beat the UA [hidden] rule */
+.galleryHead h2{margin:0;font-size:11px;letter-spacing:.08em;text-transform:uppercase;font-weight:400;color:var(--subtitle)}
+.galleryNote{font-size:10.5px;color:var(--subtitle);border:1px solid #E4DEF3;background:#FAF8FE;padding:2px 7px;border-radius:999px;cursor:default}
+.autoSaveStatus{font-size:10.5px;color:var(--subtitle);min-width:52px}
+/* bulk-download selection mode — a second .galleryHead swapped in for the normal one */
+.gallerySelectBar{background:#FAF8FE}
+#selectCount{font-size:11.5px;font-weight:700;color:var(--ink);white-space:nowrap}
+.galleryStrip{height:140px;flex:none;display:flex;gap:12px;overflow-x:auto;overflow-y:hidden;padding:9px 14px 12px}
+.galleryEmptyMsg{flex:1;display:flex;align-items:center;justify-content:center;text-align:center;font-size:12px;color:var(--subtitle);white-space:nowrap}
+.galleryCard{flex:none;width:150px;background:#fff;border:1px solid #E6E3EC;border-radius:10px;overflow:hidden;cursor:pointer;position:relative;transition:box-shadow .15s,border-color .15s,opacity .15s}
+.galleryCard:hover{border-color:var(--purple);box-shadow:0 6px 16px rgba(45,39,51,.14)}
+.galleryCard.dragging{opacity:.4}
+.galleryCard.over{border-color:var(--purple);box-shadow:0 0 0 2px rgba(152,82,219,.25)}
+.galleryCard.selected{border-color:var(--purple);box-shadow:0 0 0 2px rgba(152,82,219,.35)}
+.galleryCard.active{border-color:var(--purple);box-shadow:0 0 0 2px var(--purple)}   /* the chart currently open in the editor */
+.gallerySelectMark{position:absolute;top:5px;left:5px;width:18px;height:18px;border-radius:50%;z-index:1;
+  border:1.5px solid #fff;background:rgba(30,32,56,.35);color:#fff;font-size:11px;font-weight:700;line-height:15px;text-align:center}
+.galleryCard.selected .gallerySelectMark{background:var(--purple);border-color:var(--purple)}
+.galleryThumb{width:150px;height:82px;background:repeating-conic-gradient(#eeecf3 0% 25%, #f7f6fa 0% 50%) 50% / 14px 14px;display:flex;align-items:center;justify-content:center}
+.galleryThumb img{width:100%;height:100%;object-fit:contain;display:block}
+.galleryThumbEmpty{font-size:10.5px;color:var(--subtitle);text-align:center;padding:0 12px}
+.galleryMeta{padding:8px 8px 9px}
+.galleryTitle{font-size:11.5px;line-height:15px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.galleryNum{position:absolute;top:5px;left:5px;min-width:16px;height:16px;padding:0 4px;border-radius:5px;
+  background:rgba(30,32,56,.72);color:#fff;font-size:10px;font-weight:700;line-height:16px;text-align:center;pointer-events:none;z-index:1}
+.galleryIcons{position:absolute;top:5px;right:5px;display:flex;gap:4px;opacity:0;transition:opacity .1s}
+.galleryCard:hover .galleryIcons,.galleryCard.menuOpen .galleryIcons{opacity:1}
+.galleryIconBtn{width:22px;height:22px;border-radius:6px;border:1px solid #DDD8E6;background:#fff;cursor:pointer;
+  font-size:12px;line-height:1;display:flex;align-items:center;justify-content:center;color:var(--ink)}
+.galleryIconBtn:hover{border-color:var(--purple);color:var(--purple)}
+/* Shared floating menu, reused by every card's "⋯" AND the "+" tile's chevron — see openFloatingMenu().
+   Portalled to #stageArea (see HTML), position:fixed so it escapes .galleryStrip's and .galleryCard's own
+   overflow:hidden instead of being clipped by them; JS sets left/top with flip-to-fit collision logic. */
+.galleryCardMenu{position:fixed;z-index:200;background:#fff;border:1px solid #DDD8E6;border-radius:8px;box-shadow:0 8px 26px rgba(45,39,51,.16);padding:6px;width:170px;display:none}
+.galleryCardMenu.open{display:block}
+.galleryCardMenu button{display:block;width:100%;text-align:left;border:none;background:none;padding:7px 8px;font-family:inherit;font-size:12.5px;color:var(--ink);cursor:pointer;border-radius:6px}
+.galleryCardMenu button:hover{background:#F6F0FD;color:var(--purple)}
+.galleryCardMenu button.danger:hover{background:#FDEDEC;color:#C0392B}
+/* Group colour picker (Groups/order/colours panel) — same position:fixed + flip-to-fit placement as
+   .galleryCardMenu (positionGalleryCardMenu() is generic, reused here), since it's opened from a swatch
+   inside .rlist, itself inside the scrolling left .panel — a plain absolute popover would get clipped. */
+.colorPicker{position:fixed;z-index:210;background:#fff;border:1px solid #DDD8E6;border-radius:10px;box-shadow:0 8px 26px rgba(45,39,51,.16);padding:10px;width:172px;display:none}
+.colorPicker.open{display:block}
+.colorPickerGrid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:9px}
+.colorPickerSwatch{width:26px;height:26px;border-radius:7px;border:2px solid transparent;padding:0;cursor:pointer}
+.colorPickerSwatch:hover{border-color:#DDD8E6}
+.colorPickerSwatch.on{border-color:var(--ink)}
+.colorPickerCustomRow{display:flex;align-items:center;gap:8px;border-top:1px solid #F0EDF4;padding-top:9px}
+.colorPickerCustomRow label{font-size:11.5px;color:var(--subtitle);flex:1}
+.colorPickerCustomRow input[type=color]{width:30px;height:26px;border:1px solid #DDD8E6;border-radius:6px;padding:1px;cursor:pointer;background:#fff}
+/* "+" tile — an empty card-shaped slot at the end of the strip. Clicking anywhere on it opens the shared
+   floating menu (New blank chart / Upload) — it never acts on its own — and it's also its own drop zone
+   for dragging a .confectchart.json file straight onto it (besides the page-wide drop already handled). */
+.galleryAddTile{flex:none;width:150px;position:relative;border:1.5px dashed #DDD8E6;border-radius:10px;background:#FAF8FE;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;transition:border-color .15s,background .15s}
+.galleryAddTile:hover{border-color:var(--purple);border-style:solid;background:#F6F0FD}
+.galleryAddPlus{width:34px;height:34px;border-radius:50%;background:#fff;color:var(--purple);
+  font-size:19px;font-weight:400;line-height:34px;text-align:center;box-shadow:0 2px 6px rgba(45,39,51,.12);pointer-events:none}
 </style>
 </head>
 <body>
+<div class="editorViewport">
 <header class="appbar">
   <span class="brand"><b>Confect</b> · Chart Studio</span>
 </header>
-<!-- AI Prompt Bar -->
-<div id="aiBar" style="display:flex;align-items:center;gap:10px;padding:8px 18px;background:#FAF8FE;border-bottom:1px solid #E4DEF3">
-  <div style="width:32px;height:32px;border-radius:8px;background:#9852DB;display:flex;align-items:center;justify-content:center;flex:none">
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 4-8 16"/><path d="m2 16 6-3 6 3"/><path d="m10 8 6-3 6 3"/></svg>
-  </div>
-  <input id="aiInput" type="text" placeholder="What would you like to build?"
-    style="flex:1;font-family:inherit;font-size:14px;border:1px solid #DDD8E6;border-radius:10px;padding:9px 14px;background:#fff;color:#1E2038;outline:none"
-    onfocus="this.style.borderColor='#9852DB';this.style.boxShadow='0 0 0 3px rgba(152,82,219,.15)'"
-    onblur="this.style.borderColor='#DDD8E6';this.style.boxShadow='none'">
-  <button id="aiGo" style="border:none;background:#9852DB;color:#fff;font-family:inherit;font-weight:500;font-size:13px;border-radius:10px;padding:9px 16px;cursor:pointer;white-space:nowrap">Generate</button>
-  <span id="aiStatus" style="font-size:12px;color:#707070;min-width:60px"></span>
-</div>
 <div class="layout">
   <aside class="panel">
     <div class="section" id="s-data">
@@ -168,6 +255,7 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--purple);
         <div class="inline" style="margin-top:8px"><label class="fld" style="margin:0">2nd colour</label>
           <div class="seg" id="secSeg"><button data-sec="pink" class="on">Pink</button><button data-sec="gray">Gray</button></div></div>
         <ul class="rlist" id="groupList"></ul>
+        <button class="btn ghost sm" id="resetAllColorsBtn" style="width:100%;margin-top:8px" type="button">Reset all colours</button>
         <div class="hint">Untick to hide a group. Drag to reorder — colour follows position. Add a “skip colour” row and drag it to the top if you want to start on the pink/secondary colour instead of purple.</div>
       </div>
     </div>
@@ -195,10 +283,23 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--purple);
         <span id="detailEx" style="font-size:11px;color:var(--subtitle);min-width:44px"></span>
       </div>
       <div class="tgroup" style="margin-left:auto">
-        <button class="btn ghost sm" id="copyBtn">Copy PNG</button>
-        <button class="btn primary sm" id="pngBtn">Export PNG</button>
+        <button class="btn ghost sm" id="dataBtn" title="Load or download the editable project file">File</button>
+        <button class="btn primary sm" id="shareBtn" title="Copy or export as an image">Share</button>
         <button class="tbtn" id="expGear" title="Export settings">⚙</button>
       </div>
+      <div class="popover sharePanel" id="dataPop">
+        <button class="shareRow" id="projLoadBtn" title="Load a .confectchart.json project file" type="button"><span class="shareIcon">⬆</span>
+          <span class="shareText"><span class="shareLabel">Load editable file</span><span class="shareSub">Open a saved chart to keep editing</span></span></button>
+        <button class="shareRow" id="projDownloadBtn" title="Download the full editable chart as a project file" type="button"><span class="shareIcon">⬇</span>
+          <span class="shareText"><span class="shareLabel">Download editable file</span><span class="shareSub">Save this chart to share or edit later</span></span></button>
+      </div>
+      <div class="popover sharePanel" id="sharePop">
+        <button class="shareRow" id="copyBtn" type="button"><span class="shareIcon">📋</span>
+          <span class="shareText"><span class="shareLabel">Copy PNG</span><span class="shareSub">Copy the current chart as an image</span></span></button>
+        <button class="shareRow" id="pngBtn" type="button"><span class="shareIcon">🖼</span>
+          <span class="shareText"><span class="shareLabel">Export PNG</span><span class="shareSub">Choose which charts to download as images</span></span></button>
+      </div>
+      <input type="file" id="projFileInput" accept=".json,.confectchart.json,application/json" style="display:none"/>
       <div class="popover" id="expPop">
         <label class="fld" style="margin-top:0">Export scale</label>
         <div class="seg" id="scaleSeg" style="display:flex"><button data-sc="0.75">0.75×</button><button data-sc="1">1×</button><button data-sc="1.5">1.5×</button><button data-sc="2" class="on">2×</button></div>
@@ -215,9 +316,48 @@ select:focus,input:focus,textarea:focus{outline:none;border-color:var(--purple);
       <div id="richEditor" contenteditable="true" spellcheck="false"></div>
       <div id="hlbar"><button id="hlBtn">✨ Highlight</button></div>
       <div id="stepsCtl"><button data-step="-">−</button><span id="stepsVal">Auto</span><button data-step="+">+</button></div>
+      <div id="exportVeil">Exporting…</div>
+      <!-- Single shared floating menu, reused by every gallery card's "⋯" and the "+" tile's chevron —
+           see openFloatingMenu() / positionGalleryCardMenu() for why it lives here instead of per-card. -->
+      <div id="galleryCardMenu" class="galleryCardMenu"></div>
+    </div>
+    <!-- Phase 2 (not built yet): a real shared team gallery — everyone sees everyone's saved charts — needs a
+         backend; the existing Supabase project already used for Confect Ad Frames is the natural home for it.
+         This v1 gallery is per-device only (IndexedDB), see galleryOpen() below. It's a fixed-height strip
+         inside .stagewrap (not a full-page section) so it (a) stays visible without scrolling the page, and
+         (b) naturally starts at the canvas's left offset instead of running under the 288px side nav. -->
+    <section id="galleryWrap" class="gallerySection">
+      <div class="galleryHead" id="galleryHeadNormal">
+        <h2>My Charts</h2>
+        <span class="galleryNote" title="Every chart you create or edit is saved here automatically — use Export to share with teammates">Auto-saved on this device</span>
+        <span id="autoSaveStatus" class="autoSaveStatus"></span>
+      </div>
+      <div class="galleryHead gallerySelectBar" id="galleryHeadSelect" hidden>
+        <span id="selectCount">0 selected</span>
+        <button class="tbtn" id="selectAllToggleBtn" type="button">Select all</button>
+        <button class="btn primary sm" id="selectDownloadBtn" style="margin-left:auto" type="button">Download (0)</button>
+        <button class="tbtn" id="selectCancelBtn" title="Cancel" type="button">✕</button>
+      </div>
+      <div id="galleryStrip" class="galleryStrip"></div>
+    </section>
+  </div>
+</div>
+</div><!-- /editorViewport -->
+
+<!-- On-brand confirm dialog, replaces native confirm() — see confirmDialog() -->
+<div id="confirmOverlay" class="confirmOverlay">
+  <div class="confirmBox">
+    <div class="confirmTitle" id="confirmTitle"></div>
+    <div class="confirmMsg" id="confirmMsg"></div>
+    <div class="confirmBtns">
+      <button class="btn ghost sm" id="confirmCancelBtn" type="button">Cancel</button>
+      <button class="btn primary sm" id="confirmOkBtn" type="button">OK</button>
     </div>
   </div>
 </div>
+
+<!-- Group colour picker, opened from a swatch in the Groups/order/colours list — see openColorPicker() -->
+<div id="colorPicker" class="colorPicker"></div>
 
 <div id="logoHolder" style="display:none"><?xml version="1.0" encoding="utf-8"?>
 <!-- Generator: Adobe Illustrator 22.1.0, SVG Export Plug-In . SVG Version: 6.00 Build 0)  -->
@@ -496,9 +636,15 @@ function visibleGroups(){ // groups in slot order, skips excluded, hidden exclud
 function seriesPalette(){ if(S&&S.secondary==='gray') return [THEME.purple,THEME.gray,THEME.gray,THEME.gray,THEME.gray,THEME.gray,THEME.gray,THEME.gray,THEME.gray];  // highlight only the first
   return [THEME.purple, THEME.pink, THEME.navy, THEME.teal, THEME.coral, THEME.blue, THEME.yellow, THEME.green, THEME.indigo];}
 function seriesColor(i){const p=seriesPalette();return p[((i|0)%p.length+p.length)%p.length];}
-function groupColor(key){ // colour by slot position (skips consume a colour slot)
+function groupColor(key){ // colour by slot position (skips consume a colour slot) — unless the user picked a custom colour for this group
+  if(S.colorOverride&&S.colorOverride[key]!=null)return S.colorOverride[key];
+  if(isBaseline(key))return THEME.gray;   // sensible default for the synthetic baseline/average row — still overridable above
   const i=S.slots.indexOf(key); return seriesColor(i<0?0:i);
 }
+// One per-group flag, read contextually per chart type: the group's on-chart NAME label for scatter,
+// or its on-chart METRIC VALUE label everywhere else that draws one — never both on the same chart.
+function isLabelHidden(key){return !!(S.labelHidden&&S.labelHidden[key]);}
+function toggleLabelHidden(key){S.labelHidden=S.labelHidden||{};if(S.labelHidden[key])delete S.labelHidden[key];else S.labelHidden[key]=true;}
 function rowByKey(k){return DATA.rows.find(r=>r.key===k);}
 function selMetrics(){return DATA.metrics.filter(m=>!S.metricHidden.has(m.header)&&S.metricOrder.indexOf(m.header)>=0)
   .sort((a,b)=>S.metricOrder.indexOf(a.header)-S.metricOrder.indexOf(b.header));}
@@ -546,6 +692,7 @@ function render(){
     svg.appendChild(ed(T(PADX,footCy,S.infoText,{size:fsz,fill:THEME.subtitle,baseline:'middle'}),'footer')); }
   if(S.showLogo&&LOGO_INNER){ const g=el('g',{transform:`translate(${W-PADX-lw},${logoTop}) scale(${lw/LOGO_VB[2]})`});g.innerHTML=LOGO_INNER;svg.appendChild(g);}
   stage.appendChild(svg); updateExpDims(); buildVisChips(); fitCanvas(); positionInline();
+  scheduleAutoSave();   // debounced — every state-changing render() (any edit) re-arms it, see scheduleAutoSave()
 }
 function wrapTitle(t,maxW,size,weight){const words=t.split(/\s+/),lines=[];let cur='';
   words.forEach(w=>{const test=(cur?cur+' ':'')+w;if(tw(test.replace(/\*/g,''),size,weight)>maxW&&cur){lines.push(cur);cur=w;}else cur=test;});
@@ -610,10 +757,10 @@ function drawBar(svg,area,W,H){
   const catVals=twoDim?[...new Set(dataRows().map(r=>r.dims[1]))]:null;
   const vlab=[];
   rows.forEach((r,i)=>{const v=axisValOf(r,m);const cx=plot.x+i*(bw+gap)+gap/2;
-    const fill=isBaseline(r.key)?THEME.gray:(S.barColor==='byGroup'?groupColor(r.key):(S.barColor==='byCat'&&twoDim?seriesColor(catVals.indexOf(r.dims[1])):seriesColor(0)));
+    const fill=S.barColor==='byGroup'?groupColor(r.key):(S.barColor==='byCat'&&twoDim?seriesColor(catVals.indexOf(r.dims[1])):seriesColor(0));
     if(v!=null){const vy=plot.y+plot.h-(v-min)/(max-min)*plot.h;const top=Math.min(vy,baseY),hh=Math.abs(vy-baseY);
       svg.appendChild(el('path',{d:rr(cx,top,bw,Math.max(hh,0.5),rad,v>=0?[1,1,0,0]:[0,0,1,1]),fill}));
-      if(S.showValues)vlab.push({cx:cx+bw/2,top,hh,bw,fill,txt:lSpec.fmt(labelValOf(r,m)),neg:v<0});}
+      if(S.showValues&&!isLabelHidden(r.key))vlab.push({cx:cx+bw/2,top,hh,bw,fill,txt:lSpec.fmt(labelValOf(r,m)),neg:v<0});}
     drawCatLabel(svg,cx+bw/2,plot.y+plot.h+catSize+6,disp(r.key),colW-2,catSize,THEME.subtitle);});
   drawAvgH(svg,plot,min,max,axisUseDelta(m)?0:baselineAbs(m,DATA.rows));   // baseline line (0% change / "all")
   vlab.forEach(L=>{const wpx=tw(L.txt,VAL_SIZE,700);const inside=L.hh>VAL_SIZE+18&&L.bw>wpx+12;const fitsOut=wpx<=colW;
@@ -645,9 +792,9 @@ function drawDiverging(svg,area,W,H){
   rows.forEach((r,i)=>{const v=r.metrics[dh],yc=y0+i*rh+rh/2;
     svg.appendChild(T(area.x,yc,disp(r.key),{size:19,fill:THEME.subtitle,baseline:'central'})); if(v==null)return;
     const xv=cx+(v-min)/(max-min)*cw,pos=v>=0,x0b=Math.min(zero,xv),w=Math.abs(xv-zero);
-    const fill=isBaseline(r.key)?THEME.gray:(S.barColor==='byGroup'?groupColor(r.key):seriesColor(0));
+    const fill=S.barColor==='byGroup'?groupColor(r.key):seriesColor(0);
     svg.appendChild(el('path',{d:rr(x0b,yc-bh/2,Math.max(w,0.5),bh,5.5,pos?[0,1,1,0]:[1,0,0,1]),fill}));
-    if(S.showValues)vlab.push({xv,yc,txt:lSpec.fmt(labelValOf(r,m)),fill});});
+    if(S.showValues&&!isLabelHidden(r.key))vlab.push({xv,yc,txt:lSpec.fmt(labelValOf(r,m)),fill});});
   drawAvgV(svg,cx,cx+cw,y0,yBot,min,max,useD?0:baselineAbs(m,DATA.rows));   // avg line above bars…
   vlab.forEach(L=>hLabel(svg,zero,L.xv,L.yc,L.txt,L.fill,cx,cx+cw,17));      // …but value labels above the avg line
   // metric axis title centred below the value (X) axis, like bar/line
@@ -756,7 +903,7 @@ function drawGrouped(svg,area,W,H){
       const bfill=(c._baseline||isBaseline(c.key))?THEME.gray:s.color;
       svg.appendChild(el('path',{d:rr(bx,top,bw,Math.max(hh,0.5),Math.min(6,bw/3),pv>=0?[1,1,0,0]:[0,0,1,1]),fill:bfill}));
       const txt=(valueUseDelta(mm)&&V.d!=null)?dSpec.fmt(V.d):fmtVal(V.v,mm);
-      if(S.showValues&&bw>14)vlab.push({cx:bx+bw/2,top,hh,bw,fill:bfill,txt,neg:pv<0,single:series.length===1});});
+      if(S.showValues&&bw>14&&!(c.key&&isLabelHidden(c.key)))vlab.push({cx:bx+bw/2,top,hh,bw,fill:bfill,txt,neg:pv<0,single:series.length===1});});
     const lab=c.key?disp(c.key):pdim(catLabel(c));drawCatLabel(svg,gx+gw/2,plot.y+plot.h+catSize+8,lab,colGW-8,catSize,THEME.subtitle);});
   if(!dual)drawAvgH(svg,plot,RL.min,RL.max,deltaAxis?0:baselineAbs(axisMetric,DATA.rows));
   const gvs=Math.min(VAL_SIZE,18);
@@ -785,7 +932,7 @@ function drawSmallMult(svg,area,W,H){
     rows.forEach((r,i)=>{const v=axisValOf(r,m),yc=py+i*rh+rh/2;svg.appendChild(T(ox,yc,disp(r.key),{size:16,fill:THEME.subtitle,baseline:'central'}));if(v==null)return;
       const xv=px+(v-min)/(max-min)*pw,x0=Math.min(zero,xv),w=Math.abs(xv-zero),pos=v>=0;const bc=isBaseline(r.key)?THEME.gray:mc;
       svg.appendChild(el('path',{d:rr(x0,yc-bh/2,Math.max(w,0.5),bh,5,pos?[0,1,1,0]:[1,0,0,1]),fill:bc}));
-      if(S.showValues)lbls.push({xv,yc,txt:lSpec.fmt(labelValOf(r,m)),bc});});
+      if(S.showValues&&!isLabelHidden(r.key))lbls.push({xv,yc,txt:lSpec.fmt(labelValOf(r,m)),bc});});
     if(S.showAvg){const bv=axisUseDelta(m)?0:baselineAbs(m,DATA.rows);if(bv!=null&&isFinite(bv)){const bx=px+(bv-min)/(max-min)*pw;if(bx>=px-1&&bx<=px+pw+1)svg.appendChild(el('line',{x1:bx,y1:py,x2:bx,y2:py+ph,stroke:THEME.gray,'stroke-width':2.4,'stroke-dasharray':'2 7','stroke-linecap':'round'}));}}
     lbls.forEach(L=>hLabel(svg,zero,L.xv,L.yc,L.txt,L.bc,px,px+pw,15));   // value labels above the avg line
     // per-panel x-axis: baseline + ticks
@@ -803,14 +950,14 @@ function drawDonut(svg,area,W,H){
   metrics.forEach((m,mi)=>{const cx0=area.x+mi*cw+cw/2;
     svg.appendChild(edM(T(cx0,area.y+6,metricName(m),{size:23,weight:400,fill:THEME.subtitle,anchor:'middle'}),m.header));
     const R=Math.min(cw*0.43,area.h*0.45),cy=area.y+40+R,cxc=cx0,inner=R*0.55;
-    const parts=rows.map(r=>({label:disp(r.key),val:Math.abs(r.metrics[m.header]||0),color:groupColor(r.key)}));
+    const parts=rows.map(r=>({key:r.key,label:disp(r.key),val:Math.abs(r.metrics[m.header]||0),color:groupColor(r.key)}));
     const total=parts.reduce((a,b)=>a+b.val,0)||1;let ang=-Math.PI/2;
     parts.forEach(p=>{const a0=ang,a1=ang+p.val/total*Math.PI*2;ang=a1;const gapA=0.012;
       const x0=cxc+R*Math.cos(a0+gapA),y0=cy+R*Math.sin(a0+gapA),x1=cxc+R*Math.cos(a1-gapA),y1=cy+R*Math.sin(a1-gapA);
       const xi0=cxc+inner*Math.cos(a1-gapA),yi0=cy+inner*Math.sin(a1-gapA),xi1=cxc+inner*Math.cos(a0+gapA),yi1=cy+inner*Math.sin(a0+gapA);
       const large=(a1-a0)>Math.PI?1:0;
       svg.appendChild(el('path',{d:`M${x0},${y0} A${R},${R} 0 ${large} 1 ${x1},${y1} L${xi0},${yi0} A${inner},${inner} 0 ${large} 0 ${xi1},${yi1} Z`,fill:p.color}));
-      if(S.showValues && p.val/total>0.04){const mid=(a0+a1)/2,lr=(R+inner)/2;const lx=cxc+lr*Math.cos(mid),ly=cy+lr*Math.sin(mid);
+      if(S.showValues && !isLabelHidden(p.key) && p.val/total>0.04){const mid=(a0+a1)/2,lr=(R+inner)/2;const lx=cxc+lr*Math.cos(mid),ly=cy+lr*Math.sin(mid);
         svg.appendChild(T(lx,ly-8,p.label,{size:18,fill:'#fff',stroke:p.color,strokeW:4,anchor:'middle',baseline:'central'}));
         svg.appendChild(T(lx,ly+14,Math.round(p.val/total*100)+'%',{size:18,fill:'#fff',stroke:p.color,strokeW:4,anchor:'middle',baseline:'central'}));}});
   });
@@ -881,10 +1028,10 @@ function drawScatter(svg,area,W,H){
   let sr=()=>14;if(ms){const sv=rows.map(r=>Math.abs(r.metrics[ms.header]||0)),smax=Math.max(...sv,1e-6);sr=v=>12+Math.sqrt(Math.max(0,Math.abs(v||0))/smax)*30;}
   const many=rows.length>16;
   // draw ALL circles first…
-  rows.forEach((r)=>{const xv=axisValOf(r,mx),yv=axisValOf(r,my);if(xv==null||yv==null)return;const col=isBaseline(r.key)?THEME.gray:(many?THEME.purple:groupColor(r.key));
+  rows.forEach((r)=>{const xv=axisValOf(r,mx),yv=axisValOf(r,my);if(xv==null||yv==null)return;const col=many?THEME.purple:groupColor(r.key);
     svg.appendChild(el('circle',{cx:X(xv),cy:Y(yv),r:sr(ms?r.metrics[ms.header]:0),fill:col,'fill-opacity':many?0.4:0.9,stroke:'#fff','stroke-width':many?0:2}));});
   // …then all names on top, so a name is never hidden behind another bubble
-  if(!many)rows.forEach((r)=>{const xv=axisValOf(r,mx),yv=axisValOf(r,my);if(xv==null||yv==null)return;
+  if(!many)rows.forEach((r)=>{const xv=axisValOf(r,mx),yv=axisValOf(r,my);if(xv==null||yv==null||isLabelHidden(r.key))return;
     svg.appendChild(T(X(xv),Y(yv)-sr(ms?r.metrics[ms.header]:0)-7,disp(r.key),{size:16,anchor:'middle',stroke:'#fff',strokeW:3.5}));});
   // axis titles centred on their axes (like the bar chart)
   if(S.showX)svg.appendChild(edM(T(plot.x+plot.w/2,plot.y+plot.h+54,metricName(mx),{size:19,fill:THEME.subtitle,anchor:'middle'}),mx.header));
@@ -952,7 +1099,7 @@ function initState(){
      showHead:true,headline:'',showSub:true,subhead:defaultSub(),showInfo:true,infoText:'',
      showX:true,xTitle:'',xTitleAuto:true,showY:true,yTitle:'',yTitleAuto:true,tickCount:0,
      barColor:'single',refLine:null,refLabel:'',bg:'transparent',tiles:[],secondary:'pink',
-     detail:2,fileType:'png',expScale:2,rename:{},metricRename:{},showAvg:false,zeroBase:false};
+     detail:2,fileType:'png',expScale:2,rename:{},metricRename:{},colorOverride:{},labelHidden:{},showAvg:false,zeroBase:false};
   S.headline=defaultHeadline();S.infoText=defaultInfo();S.tiles=buildTiles();
 }
 function onType(){
@@ -1024,15 +1171,71 @@ function esc(s){return (''+s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace
 function buildGroupList(){const ul=document.getElementById('groupList');ul.innerHTML='';const m=primaryMetric();
   S.slots.forEach((k)=>{const li=document.createElement('li');li.draggable=true;li.dataset.key=k;
     if(k.startsWith('__skip')){li.className='skip';li.innerHTML=`<span class="grip">⠿</span><span class="sw" style="background:${seriesColor(S.slots.indexOf(k))};opacity:.4"></span><span class="nm">— skip this colour —</span><span class="rm" data-rm="${k}">✕</span>`;}
-    else{const r=rowByKey(k);const on=!S.hidden.has(k);
-      li.innerHTML=`<span class="grip">⠿</span><input type="checkbox" ${on?'checked':''} data-tog="${k}"/><span class="sw" style="background:${on?groupColor(k):'#DDD'}"></span><input class="nm-edit" data-ren="${esc(k)}" value="${esc(disp(k))}"/><span class="val">${r?fmtVal(r.metrics[m.header],m,S.loc):''}</span>`;}
+    else{const r=rowByKey(k);const on=!S.hidden.has(k);const labelOff=isLabelHidden(k);
+      const labelTitle=S.type==='scatter'?(labelOff?'Name hidden on chart — click to show':'Click to hide this group’s name on the chart')
+        :(labelOff?'Value label hidden on chart — click to show':'Click to hide this group’s value label on the chart');
+      const hasOverride=!!(S.colorOverride&&S.colorOverride[k]!=null);
+      li.innerHTML=`<span class="grip">⠿</span><input type="checkbox" ${on?'checked':''} data-tog="${k}"/><span class="sw" style="background:${on?groupColor(k):'#DDD'}" data-swatch="${esc(k)}" title="Change colour"></span><input class="nm-edit" data-ren="${esc(k)}" value="${esc(disp(k))}"/><span class="val${labelOff?' labelOff':''}" data-label-toggle="${esc(k)}" title="${esc(labelTitle)}">${r?fmtVal(r.metrics[m.header],m,S.loc):''}</span><span class="resetSwatch${hasOverride?' active':''}" data-reset-swatch="${esc(k)}" title="${hasOverride?'Reset to default colour':'Already using the default colour'}">↺</span>`;}
     ul.appendChild(li);});
   ul.querySelectorAll('[data-tog]').forEach(cb=>cb.onchange=()=>{const k=cb.dataset.tog;if(cb.checked)S.hidden.delete(k);else S.hidden.add(k);buildGroupList();render();});
   ul.querySelectorAll('[data-rm]').forEach(x=>x.onclick=()=>{S.slots=S.slots.filter(s=>s!==x.dataset.rm);buildGroupList();render();});
   ul.querySelectorAll('[data-ren]').forEach(inp=>{
     inp.addEventListener('mousedown',e=>e.stopPropagation());
     inp.addEventListener('input',()=>{const k=inp.dataset.ren;const v=inp.value;if(v===pretty(k))delete S.rename[k];else S.rename[k]=v;render();});});
+  ul.querySelectorAll('[data-swatch]').forEach(sw=>{
+    sw.addEventListener('mousedown',e=>e.stopPropagation());
+    sw.addEventListener('click',e=>{e.stopPropagation();openColorPicker(sw,sw.dataset.swatch);});});
+  ul.querySelectorAll('[data-label-toggle]').forEach(v=>{
+    v.addEventListener('mousedown',e=>e.stopPropagation());
+    v.addEventListener('click',e=>{e.stopPropagation();toggleLabelHidden(v.dataset.labelToggle);buildGroupList();render();});});
+  ul.querySelectorAll('[data-reset-swatch]').forEach(ic=>{
+    ic.addEventListener('mousedown',e=>e.stopPropagation());
+    ic.addEventListener('click',e=>{e.stopPropagation();resetGroupColor(ic.dataset.resetSwatch);});});
   wireDnD(ul);}
+// Always clickable (a no-op when there's nothing to reset) — dimmed vs. purple-on-hover only changes
+// which visual state it starts in, see buildGroupList()'s hasOverride check.
+function resetGroupColor(key){ if(S.colorOverride)delete S.colorOverride[key]; buildGroupList();render(); }
+function resetAllGroupColors(){ S.colorOverride={}; buildGroupList();render(); }
+// Quick-select palette for the colour picker — the same on-brand THEME colours already used as the
+// default series palette, plus grey (the built-in "highlight/skip" tone) for completeness.
+const THEME_SWATCHES=[THEME.purple,THEME.pink,THEME.navy,THEME.teal,THEME.coral,THEME.blue,THEME.yellow,THEME.green,THEME.indigo,THEME.gray];
+let _colorPickerKey=null;
+function openColorPicker(btn,key){
+  const pop=document.getElementById('colorPicker');
+  const wasOpenForThis=pop.classList.contains('open')&&_colorPickerKey===key;
+  closeAllGalleryMenus();closeColorPicker();
+  if(wasOpenForThis)return;   // clicking the same swatch again just closes it
+  _colorPickerKey=key;
+  const current=(groupColor(key)||'').toLowerCase();
+  pop.innerHTML=`<div class="colorPickerGrid">${THEME_SWATCHES.map(c=>
+      `<button class="colorPickerSwatch${c.toLowerCase()===current?' on':''}" style="background:${c}" data-hex="${c}" title="${c}" type="button"></button>`).join('')}
+    </div>
+    <div class="colorPickerCustomRow"><label>Custom</label><input type="color" id="colorPickerCustom" value="${/^#[0-9a-f]{6}$/i.test(current)?current:'#9852db'}"></div>`;
+  pop.querySelectorAll('[data-hex]').forEach(b=>b.addEventListener('click',()=>{applyGroupColor(key,b.dataset.hex);closeColorPicker();}));
+  const custom=pop.querySelector('#colorPickerCustom');
+  custom.addEventListener('input',e=>applyGroupColor(key,e.target.value));   // live preview while dragging the picker
+  custom.addEventListener('change',closeColorPicker);                        // committed (dialog dismissed)
+  pop.classList.add('open');
+  positionGalleryCardMenu(pop,btn);   // generic flip-to-fit placement — see its own comment for why
+}
+function closeColorPicker(){
+  const pop=document.getElementById('colorPicker');if(!pop)return;
+  pop.classList.remove('open');_colorPickerKey=null;
+}
+function applyGroupColor(key,hex){
+  S.colorOverride=S.colorOverride||{};S.colorOverride[key]=hex;
+  // drawBar()/drawDiverging() only ever read groupColor() when "Colour bars" is set to By group — in the
+  // default Single (or By category) mode every bar shares one colour, so a freshly-picked colour would
+  // silently have no visible effect. Picking a colour is an explicit "make this group distinct" signal,
+  // so switch into By group automatically; donut/scatter always honour groupColor() regardless of mode.
+  let modeSwitched=false;
+  if((S.type==='bar'||S.type==='diverging')&&S.barColor!=='byGroup'){S.barColor='byGroup';modeSwitched=true;}
+  // full sync() only on the switch itself (rebuilds the "Colour bars" toggle to show By group) — plain
+  // buildGroupList() the rest of the time, since applyGroupColor can fire rapidly while the native
+  // <input type=color> is being dragged and a full sync() on every one of those would be wasteful.
+  if(modeSwitched)sync();else buildGroupList();
+  render();   // render()'s scheduleAutoSave() covers persistence; colorOverride round-trips through
+}             // projectState()/applyProject() automatically, like rename/metricRename
 function wireDnD(ul){let drag=null;ul.querySelectorAll('li').forEach(li=>{
   li.addEventListener('dragstart',()=>{drag=li;li.classList.add('dragging');});
   li.addEventListener('dragend',()=>{li.classList.remove('dragging');ul.querySelectorAll('li').forEach(x=>x.classList.remove('over'));S.slots=[...ul.querySelectorAll('li')].map(x=>x.dataset.key);buildGroupList();render();});
@@ -1049,8 +1252,9 @@ function sync(){buildTypeGrid();buildMetricChips();mapHint();buildGroupList();bu
   [...document.querySelectorAll('#scaleSeg button')].forEach(b=>b.classList.toggle('on',+b.dataset.sc===(S.expScale||2)));
   [...document.querySelectorAll('#secSeg button')].forEach(b=>b.classList.toggle('on',b.dataset.sec===S.secondary));
   [...document.querySelectorAll('#ftSeg button')].forEach(b=>b.classList.toggle('on',b.dataset.ft===S.fileType));
-  document.getElementById('pngBtn').textContent='Export '+S.fileType.toUpperCase();
-  const cb=document.getElementById('copyBtn');if(cb)cb.textContent='Copy '+S.fileType.toUpperCase();}
+  // update just the label text, not the whole button — a bare .textContent= here would also wipe out the .shareIcon span
+  const pngLbl=document.querySelector('#pngBtn .shareLabel');if(pngLbl)pngLbl.textContent='Export '+S.fileType.toUpperCase();
+  const copyLbl=document.querySelector('#copyBtn .shareLabel');if(copyLbl)copyLbl.textContent='Copy '+S.fileType.toUpperCase();}
 function showControls(){['s-type','s-map','s-groups'].forEach(id=>document.getElementById(id).style.display='');}
 function buildVisChips(){const c=document.getElementById('visChips');if(!c||!S)return;c.innerHTML='';
   const lab=document.createElement('span');lab.className='lab';lab.textContent='Show';c.appendChild(lab);
@@ -1115,23 +1319,72 @@ function serialize(bg){const svg=document.getElementById('chartSvg').cloneNode(t
   const rect=svg.querySelector('#bgRect');if(rect){if(bg==='transparent')rect.remove();else rect.setAttribute('fill','#FFFFFF');}
   return '<?xml version="1.0" encoding="UTF-8"?>\n'+new XMLSerializer().serializeToString(svg);}
 function dl(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),3000);}
+function sanitizeFileName(s){return (''+(s==null?'':s)).replace(/\*/g,'').replace(/[\/\\:*?"<>|]+/g,' ').replace(/\s+/g,' ').trim();}  // drop highlight *…* + filesystem-illegal chars
 function fileBase(){
-  const clean=s=>(''+(s==null?'':s)).replace(/\*/g,'').replace(/[\/\\:*?"<>|]+/g,' ').replace(/\s+/g,' ').trim();  // drop highlight *…* + filesystem-illegal chars
-  const head=clean(S.showHead?S.headline:''), sub=clean(S.showSub?S.subhead:'');
+  const head=sanitizeFileName(S.showHead?S.headline:''), sub=sanitizeFileName(S.showSub?S.subhead:'');
   const name=[head,sub].filter(Boolean).join(' - ');
   return name || ('confect-'+S.type+'-'+(DATA.dims[0]||'chart').toLowerCase().replace(/[^a-z0-9]+/g,'-'));  // fallback when no headline/subhead
 }
 function exportSVG(){dl(new Blob([serialize(S.bg)],{type:'image/svg+xml'}),fileBase()+'.svg');}
 // Rasterize the current chart to a Blob. JPEG is rendered on white and quality-tuned for small web files.
-async function rasterize(){const jpeg=S.fileType==='jpeg';const [pw,ph]=S._px||[1280,720];
-  const scale=S.expScale||2;const cw=Math.round(pw*scale),ch=Math.round(ph*scale);
-  const bg=jpeg?'white':S.bg;
+// opts lets callers override the live export settings (used by the gallery thumbnailer) without touching S.
+async function rasterize(opts){opts=opts||{};const jpeg=(opts.fileType||S.fileType)==='jpeg';const [pw,ph]=S._px||[1280,720];
+  const scale=opts.scale!=null?opts.scale:(S.expScale||2);const cw=opts.width||Math.round(pw*scale),ch=opts.height||Math.round(ph*scale);
+  const bg=opts.bg!=null?opts.bg:(jpeg?'white':S.bg);
   const str=serialize(bg);const img=new Image();const url=URL.createObjectURL(new Blob([str],{type:'image/svg+xml;charset=utf-8'}));
   await new Promise((res,rej)=>{img.onload=res;img.onerror=()=>rej(new Error('render failed'));img.src=url;});
   const cv=document.createElement('canvas');cv.width=cw;cv.height=ch;const ctx=cv.getContext('2d');
   if(bg==='white'){ctx.fillStyle='#fff';ctx.fillRect(0,0,cw,ch);}ctx.drawImage(img,0,0,cw,ch);URL.revokeObjectURL(url);
   return await new Promise(res=>cv.toBlob(res,jpeg?'image/jpeg':'image/png',jpeg?0.8:undefined));}  // 0.8 quality keeps JPEGs light
 async function exportPNG(){const b=await rasterize();dl(b,fileBase()+'.'+(S.fileType==='jpeg'?'jpg':'png'));}
+
+/* ================= ZIP (vanilla JS, no dependency) =================
+   Minimal PKZIP writer using the store method (no compression) — sufficient since the payload (PNGs) is
+   already compressed, and it keeps this a plain read/write of the standard local-file-header / central-
+   directory / end-of-central-directory layout rather than needing a compressor. */
+let _crc32Table=null;
+function crc32(bytes){
+  if(!_crc32Table){ _crc32Table=new Uint32Array(256);
+    for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1);_crc32Table[n]=c>>>0;} }
+  let crc=0xFFFFFFFF;
+  for(let i=0;i<bytes.length;i++)crc=_crc32Table[(crc^bytes[i])&0xFF]^(crc>>>8);
+  return (crc^0xFFFFFFFF)>>>0;
+}
+function dosDateTime(d){ d=d||new Date();
+  return {time:((d.getHours()&0x1F)<<11)|((d.getMinutes()&0x3F)<<5)|((Math.floor(d.getSeconds()/2))&0x1F),
+    date:(((d.getFullYear()-1980)&0x7F)<<9)|(((d.getMonth()+1)&0xF)<<5)|(d.getDate()&0x1F)}; }
+// files: [{name, data:Uint8Array}] -> zip Blob. UTF-8 filenames (general-purpose bit 11) for non-ASCII headlines.
+function buildZip(files){
+  const enc=new TextEncoder(),{time,date}=dosDateTime(),FLAG=0x0800;
+  const parts=[],central=[];let offset=0;
+  files.forEach(f=>{
+    const nameBytes=enc.encode(f.name),data=f.data,crc=crc32(data);
+    const lh=new DataView(new ArrayBuffer(30));
+    lh.setUint32(0,0x04034b50,true);lh.setUint16(4,20,true);lh.setUint16(6,FLAG,true);lh.setUint16(8,0,true);
+    lh.setUint16(10,time,true);lh.setUint16(12,date,true);lh.setUint32(14,crc,true);
+    lh.setUint32(18,data.length,true);lh.setUint32(22,data.length,true);
+    lh.setUint16(26,nameBytes.length,true);lh.setUint16(28,0,true);
+    const localOffset=offset;
+    parts.push(new Uint8Array(lh.buffer),nameBytes,data);
+    offset+=30+nameBytes.length+data.length;
+    const ch=new DataView(new ArrayBuffer(46));
+    ch.setUint32(0,0x02014b50,true);ch.setUint16(4,20,true);ch.setUint16(6,20,true);ch.setUint16(8,FLAG,true);ch.setUint16(10,0,true);
+    ch.setUint16(12,time,true);ch.setUint16(14,date,true);ch.setUint32(16,crc,true);
+    ch.setUint32(20,data.length,true);ch.setUint32(24,data.length,true);
+    ch.setUint16(28,nameBytes.length,true);ch.setUint16(30,0,true);ch.setUint16(32,0,true);
+    ch.setUint16(34,0,true);ch.setUint16(36,0,true);ch.setUint32(38,0,true);ch.setUint32(42,localOffset,true);
+    central.push(new Uint8Array(ch.buffer),nameBytes);
+  });
+  const centralStart=offset,centralSize=central.reduce((n,p)=>n+p.length,0);
+  const eo=new DataView(new ArrayBuffer(22));
+  eo.setUint32(0,0x06054b50,true);eo.setUint16(4,0,true);eo.setUint16(6,0,true);
+  eo.setUint16(8,files.length,true);eo.setUint16(10,files.length,true);
+  eo.setUint32(12,centralSize,true);eo.setUint32(16,centralStart,true);eo.setUint16(20,0,true);
+  return new Blob([...parts,...central,new Uint8Array(eo.buffer)],{type:'application/zip'});
+}
+// Small PNG snapshot for a gallery card — same pipeline as exportPNG(), just scaled down and forced to white.
+async function makeThumbnail(maxW){maxW=maxW||320;const [pw,ph]=S._px||[1280,720];const scale=Math.min(1,maxW/pw);
+  return rasterize({scale,bg:'white',fileType:'png'});}
 async function copyExport(){
   if(S.fileType==='svg'){ await navigator.clipboard.writeText(serialize(S.bg)); flashCopy(); return; }
   const b=await rasterize();
@@ -1139,131 +1392,468 @@ async function copyExport(){
   catch(e){ // some browsers only accept image/png on the clipboard
     if(b.type!=='image/png'){ const pngS=S.fileType;S.fileType='png';const pb=await rasterize();S.fileType=pngS; await navigator.clipboard.write([new ClipboardItem({'image/png':pb})]); flashCopy(); }
     else throw e; } }
-function flashCopy(){const b=document.getElementById('copyBtn');if(!b)return;const t=b.textContent;b.textContent='Copied ✓';setTimeout(()=>{b.textContent=t;},1400);}
+// targets .shareLabel specifically — a bare textContent= on the whole button would also wipe its icon/subtext
+function flashCopy(){const lbl=document.querySelector('#copyBtn .shareLabel');if(!lbl)return;const t=lbl.textContent;lbl.textContent='Copied ✓';setTimeout(()=>{lbl.textContent=t;},1400);}
 function updateExpDims(){if(!S||!S._px)return;const scale=S.expScale||2;
   document.getElementById('expDims').textContent=`Export: ${Math.round(S._px[0]*scale)} × ${Math.round(S._px[1]*scale)} px · ${S.bg} background`;}
 
 /* ---------- LOAD ---------- */
-function loadRaw(raw){const err=document.getElementById('parseErr');err.textContent='';
-  try{DATA=parseData(raw);initState();showControls();sync();render();
-    document.getElementById('dataInfo').textContent=`Parsed ${DATA.rows.length} rows · ${DATA.dims.length} group-by (${DATA.dims.join(', ')}) · ${DATA.metrics.length} metrics.`;
+function updateDataInfo(){document.getElementById('dataInfo').textContent=`Parsed ${DATA.rows.length} rows · ${DATA.dims.length} group-by (${DATA.dims.join(', ')}) · ${DATA.metrics.length} metrics.`;}
+// opts.silent skips the immediate auto-save — used only for the app's own startup bootstrap load, so
+// reloading the page doesn't fork a fresh "ROAS by Ad theme" gallery entry every time; the debounced
+// save in render() still kicks in the moment the user actually touches that bootstrap chart.
+function loadRaw(raw,opts){opts=opts||{};const err=document.getElementById('parseErr');err.textContent='';
+  // If the editor was showing a blank placeholder (the "+" tile's gallery card, no data yet, but already
+  // bound to a record), this first real load should fill that SAME record in rather than forking a new
+  // one — so its currentGalleryId is deliberately kept instead of reset to null like a normal fresh load.
+  const fillingBlankPlaceholder=(DATA===null&&currentGalleryId!=null);
+  try{DATA=parseData(raw);initState();if(!fillingBlankPlaceholder)currentGalleryId=null;showControls();sync();render();updateDataInfo();
+    if(!opts.silent)autoSaveNow();   // a freshly-created chart exists in the gallery right away, not just after the edit debounce
   }catch(e){err.textContent='⚠ '+e.message;DATA=null;}}
 
-function doExport(){ if(S.fileType==='svg') exportSVG(); else exportPNG().catch(e=>alert('Export failed: '+e.message)); }
-/* ---------- EVENTS ---------- */
-window.addEventListener('DOMContentLoaded',()=>{
-// AI Prompt integration
-const AI_WEBHOOK_URL = 'https://n8n-hooks.confect.io/webhook/chart-studio-ai';
 
-async function aiSend() {
-  const input = document.getElementById('aiInput');
-  const status = document.getElementById('aiStatus');
-  const prompt = input.value.trim();
-  if (!prompt) return;
+/* ================= PROJECT SAVE / LOAD (single .confectchart.json file) ================= */
+const PROJECT_SCHEMA_VERSION=1;
+// S minus render-time caches (_plot/_px/_axisChart) and tiles (always re-derived from DATA in initState()).
+// Everything else in S round-trips generically, so new S fields stay covered without touching this function.
+function projectState(){const {_plot,_axisChart,_px,tiles,metricHidden,hidden,...rest}=S;
+  return {...rest,metricHidden:[...metricHidden],hidden:[...hidden]};}
+function buildProject(){
+  return {schemaVersion:PROJECT_SCHEMA_VERSION,savedAt:new Date().toISOString(),
+    rawData:document.getElementById('rawdata').value,
+    customW:document.getElementById('cw').value,customH:document.getElementById('ch').value,
+    state:projectState()};
+}
+function projectFileName(project){
+  const st=project.state||{};
+  const head=sanitizeFileName(st.showHead?st.headline:''),sub=sanitizeFileName(st.showSub?st.subhead:'');
+  const name=[head,sub].filter(Boolean).join(' - ');
+  return name||('confect-'+(st.type||'chart'));
+}
+// Restores DATA/S from a project object exactly as buildProject() produced it. Throws a plain Error
+// (schemaVersion missing/unrecognized, or the file is otherwise malformed) — callers show it inline.
+function applyProject(proj){
+  if(!proj||typeof proj!=='object') throw new Error('Not a valid project file.');
+  if(proj.schemaVersion!==PROJECT_SCHEMA_VERSION) throw new Error(`Unsupported project version (${proj.schemaVersion==null?'missing':proj.schemaVersion}); this build reads version ${PROJECT_SCHEMA_VERSION}.`);
+  if(typeof proj.rawData!=='string'||!proj.rawData.trim()) throw new Error('Project file has no chart data.');
+  if(!proj.state||typeof proj.state!=='object') throw new Error('Project file is missing chart settings.');
 
-  status.textContent = 'Thinking...';
-  status.style.color = '#9852DB';
+  DATA=parseData(proj.rawData);         // throws on malformed data — caller shows the message
+  initState();                          // sets defaults + tiles from the freshly parsed DATA
+  const st=proj.state;
+  S=Object.assign(S,st,{metricHidden:new Set(st.metricHidden||[]),hidden:new Set(st.hidden||[]),tiles:S.tiles});
+  skipId=1+S.slots.reduce((mx,k)=>{const m=/^__skip(\d+)$/.exec(k);return m?Math.max(mx,+m[1]):mx;},0);  // avoid new-skip id collisions
 
-  // Per-metric min/max and which group holds each, so the AI can reason about
-  // the actual data rather than just the labels (e.g. "highlight the strongest theme").
-  const dataSummary = DATA ? DATA.metrics.map(m => {
-    const vals = DATA.rows
-      .filter(r => r.key !== '__baseline')
-      .map(r => ({ key: r.key, v: r.metrics[m.header] }))
-      .filter(x => x.v != null);
-    if (!vals.length) return null;
-    const hi = vals.reduce((a, b) => b.v > a.v ? b : a);
-    const lo = vals.reduce((a, b) => b.v < a.v ? b : a);
-    return { metric: m.label || m.header, min: lo.v, max: hi.v, highestGroup: hi.key, lowestGroup: lo.key };
-  }).filter(Boolean) : [];
-
-  const ctx = {
-    prompt,
-    hasData: !!DATA,
-    chartType: S ? S.type : null,
-    availableMetrics: DATA ? DATA.metrics.map(m => m.label || m.header) : [],
-    availableGroups: DATA ? DATA.rows.map(r => r.key).filter(k => k !== '__baseline') : [],
-    dataSummary,
-    currentHeadline: S ? S.headline : '',
-    currentSubhead: S ? S.subhead : '',
-  };
-
-  try {
-    const res = await fetch(AI_WEBHOOK_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(ctx)
-    });
-    const result = await res.json();
-
-    if (result.error) {
-      status.textContent = result.error;
-      status.style.color = '#E53E3E';
-      return;
-    }
-
-    if (result.chartType && CHART_TYPES.find(t => t.id === result.chartType)) {
-      S.type = result.chartType;
-    }
-    if (result.headline != null) S.headline = result.headline;
-    if (result.subhead != null) S.subhead = result.subhead;
-
-    if (result.activeMetrics && Array.isArray(result.activeMetrics)) {
-      const mHeaders = DATA.metrics.map(m => m.header);
-      S.metricHidden = new Set(mHeaders);
-      S.metricOrder = [];
-      result.activeMetrics.forEach(label => {
-        const m = DATA.metrics.find(m =>
-          m.header.toLowerCase().includes(label.toLowerCase()) ||
-          (m.label || '').toLowerCase().includes(label.toLowerCase()) ||
-          (m.short || '').toLowerCase().includes(label.toLowerCase())
-        );
-        if (m) {
-          S.metricHidden.delete(m.header);
-          S.metricOrder.push(m.header);
-        }
-      });
-    }
-
-    if (result.showAvg != null) S.showAvg = result.showAvg;
-    if (result.showValues != null) S.showValues = result.showValues;
-    if (result.axisMode) S.axisMode = result.axisMode;
-    if (result.valueMode) S.valueMode = result.valueMode;
-
-    // Highlight a single group (e.g. "highlight the strongest ad theme"):
-    // move it to the front of the slot order and switch the palette to gray-out mode.
-    if (result.highlightGroup) {
-      const match = DATA.rows.find(r =>
-        r.key.toLowerCase().includes(result.highlightGroup.toLowerCase())
-      );
-      if (match) {
-        S.slots = [match.key, ...S.slots.filter(k => k !== match.key)];
-        S.secondary = 'gray';
-      }
-    }
-
-    buildTypeGrid();
-    buildMetricChips();
-    buildGroupList();
-    buildVisChips();
-    render();
-
-    status.textContent = 'Applied!';
-    status.style.color = '#38A169';
-    setTimeout(() => { status.textContent = ''; }, 2000);
-
-  } catch (e) {
-    status.textContent = 'Failed';
-    status.style.color = '#E53E3E';
-    console.error('AI error:', e);
-  }
+  document.getElementById('rawdata').value=proj.rawData;
+  if(proj.customW)document.getElementById('cw').value=proj.customW;
+  if(proj.customH)document.getElementById('ch').value=proj.customH;
+  document.getElementById('parseErr').textContent='';
+  updateDataInfo();showControls();sync();render();
+}
+function downloadProjectFile(){dl(new Blob([JSON.stringify(buildProject(),null,2)],{type:'application/json'}),fileBase()+'.confectchart.json');}
+async function loadProjectFile(file){
+  const err=document.getElementById('parseErr');if(err)err.textContent='';
+  const fillingBlankPlaceholder=(DATA===null&&currentGalleryId!=null);   // see loadRaw()'s comment — same reasoning
+  try{ applyProject(JSON.parse(await file.text())); if(!fillingBlankPlaceholder)currentGalleryId=null; autoSaveNow(); }  // exists in the gallery right away
+  catch(e){ if(err)err.textContent='⚠ Could not load project file: '+e.message; console.error('Project load failed:',e); }
 }
 
-document.getElementById('aiInput').addEventListener('keydown', e => {
-  if (e.key === 'Enter') aiSend();
-});
-document.getElementById('aiGo').addEventListener('click', aiSend);
+/* ================= MY CHARTS GALLERY (IndexedDB, this device only) =================
+   Phase 2 (not built): a real shared team gallery needs a backend — the existing Supabase
+   project already used for Confect Ad Frames is the natural home for that later. */
+const GALLERY_DB='confectChartStudioGallery',GALLERY_STORE='charts',GALLERY_DB_VERSION=1;
+let _galleryDbPromise=null;
+function galleryOpen(){
+  if(_galleryDbPromise)return _galleryDbPromise;
+  _galleryDbPromise=new Promise((resolve,reject)=>{
+    if(!('indexedDB' in window)){reject(new Error('IndexedDB is not available in this browser.'));return;}
+    const req=indexedDB.open(GALLERY_DB,GALLERY_DB_VERSION);
+    req.onupgradeneeded=()=>{const db=req.result;
+      if(!db.objectStoreNames.contains(GALLERY_STORE)){const os=db.createObjectStore(GALLERY_STORE,{keyPath:'id'});os.createIndex('updatedAt','updatedAt');}};
+    req.onsuccess=()=>resolve(req.result);
+    req.onerror=()=>reject(req.error||new Error('Could not open the chart gallery database.'));
+  });
+  return _galleryDbPromise;
+}
+function idbReq(req){return new Promise((res,rej)=>{req.onsuccess=()=>res(req.result);req.onerror=()=>rej(req.error);});}
+async function galleryStore(mode){const db=await galleryOpen();return db.transaction(GALLERY_STORE,mode).objectStore(GALLERY_STORE);}
+async function galleryPut(rec){const os=await galleryStore('readwrite');await idbReq(os.put(rec));return rec.id;}
+async function galleryGet(id){const os=await galleryStore('readonly');return idbReq(os.get(id));}
+// Display order is an explicit per-record field (drag-and-drop reorders it), not derived from recency —
+// legacy records saved before that existed (order==null) fall back to createdAt so they still land
+// somewhere stable until renderGallery()'s self-heal (see below) gives them a real, canonical order.
+async function galleryGetAll(){const os=await galleryStore('readonly');const items=await idbReq(os.getAll());
+  return items.sort((a,b)=>{const ao=a.order,bo=b.order;
+    if(ao!=null&&bo!=null)return ao-bo; if(ao!=null)return -1; if(bo!=null)return 1;
+    return (a.createdAt||0)-(b.createdAt||0);});}
+async function galleryDelete(id){const os=await galleryStore('readwrite');await idbReq(os.delete(id));}
+function newGalleryId(){return crypto.randomUUID?crypto.randomUUID():'c'+Date.now()+Math.random().toString(36).slice(2);}
+async function nextGalleryOrder(){let items=[];try{items=await galleryGetAll();}catch(e){return 0;}
+  return items.reduce((mx,r)=>Math.max(mx,r.order??-1),-1)+1;}   // new charts append after the last one, before the "+" tile
 
+let currentGalleryId=null;   // gallery record the live editor is bound to; auto-save updates it in place
+// The card name is always the chart's headline — never a separately stored/edited title — kept in sync
+// by re-deriving it on every auto-save; edit the headline on the canvas to rename a saved chart.
+function galleryTitleFor(project){const st=project.state||{};const clean=s=>(''+(s||'')).replace(/\*/g,'').trim();
+  return clean(st.showHead?st.headline:'')||'Untitled chart';}
+
+/* ---- auto-save: no manual Save button — every chart is persisted to the gallery on its own ----
+   scheduleAutoSave() is called once, generically, at the end of render() (i.e. after any edit), and
+   debounces so rapid edits (typing a headline, dragging a slider) don't write/re-thumbnail on every
+   frame. autoSaveNow() bypasses the debounce for the two "this is a distinct chart" moments — loading
+   fresh data and loading a project file — so the gallery reflects them immediately, per the spec. */
+const AUTO_SAVE_DEBOUNCE_MS=1000;
+let _autoSaveTimer=null,_autoSaveSuspended=false,_autoSaveInFlight=false,_autoSaveQueued=false;
+function setAutoSaveStatus(text,color){const el=document.getElementById('autoSaveStatus');if(!el)return;el.textContent=text;el.style.color=color||'';}
+function scheduleAutoSave(){
+  if(_autoSaveSuspended||!DATA||!S)return;
+  clearTimeout(_autoSaveTimer);
+  _autoSaveTimer=setTimeout(autoSaveNow,AUTO_SAVE_DEBOUNCE_MS);
+}
+function autoSaveNow(){
+  clearTimeout(_autoSaveTimer);_autoSaveTimer=null;
+  if(_autoSaveSuspended||!DATA||!S)return;
+  if(_autoSaveInFlight){_autoSaveQueued=true;return;}   // a write is already in progress — run once more right after it finishes
+  _autoSaveInFlight=true;
+  persistCurrentChart().finally(()=>{
+    _autoSaveInFlight=false;
+    if(_autoSaveQueued){_autoSaveQueued=false;autoSaveNow();}
+  });
+}
+async function persistCurrentChart(){
+  setAutoSaveStatus('Saving…','var(--purple)');
+  try{
+    const project=buildProject();
+    const thumb=await makeThumbnail().catch(()=>null);
+    const now=Date.now(),title=galleryTitleFor(project);let rec;
+    if(currentGalleryId){
+      const existing=await galleryGet(currentGalleryId);
+      rec={id:currentGalleryId,title,order:existing&&existing.order!=null?existing.order:await nextGalleryOrder(),
+        createdAt:existing?existing.createdAt:now,updatedAt:now,project,thumb};
+    }else{
+      rec={id:newGalleryId(),title,order:await nextGalleryOrder(),createdAt:now,updatedAt:now,project,thumb};
+      currentGalleryId=rec.id;
+    }
+    await galleryPut(rec);await renderGallery();
+    setAutoSaveStatus('Saved','#38A169');
+    setTimeout(()=>{const el=document.getElementById('autoSaveStatus');if(el&&el.textContent==='Saved')setAutoSaveStatus('');},1500);
+  }catch(e){console.error('Auto-save failed:',e);setAutoSaveStatus('Save failed','#E53E3E');}
+}
+let _galleryObjectUrls=[];
+/* ---- bulk-download selection mode ---- */
+let gallerySelectionMode=false,gallerySelectedIds=new Set();
+async function enterGallerySelection(){
+  let items=[];try{items=await galleryGetAll();}catch(e){}
+  if(!items.length)return;   // nothing to select
+  closeAllGalleryMenus();
+  gallerySelectedIds=new Set(items.map(r=>r.id));   // Canva-style: everything starts selected
+  gallerySelectionMode=true;
+  await renderGallery();
+}
+function exitGallerySelection(){ gallerySelectionMode=false;gallerySelectedIds=new Set();renderGallery(); }
+function toggleCardSelection(id,card){
+  if(gallerySelectedIds.has(id))gallerySelectedIds.delete(id);else gallerySelectedIds.add(id);
+  card.classList.toggle('selected',gallerySelectedIds.has(id));
+  const mark=card.querySelector('[data-select]');if(mark)mark.textContent=gallerySelectedIds.has(id)?'✓':'';
+  updateSelectionBar(_gallerySelectTotal);
+}
+async function toggleSelectAll(){
+  let items=[];try{items=await galleryGetAll();}catch(e){}
+  const allSelected=items.length>0&&items.every(r=>gallerySelectedIds.has(r.id));
+  gallerySelectedIds=allSelected?new Set():new Set(items.map(r=>r.id));
+  renderGallery();
+}
+let _gallerySelectTotal=0;
+function updateSelectionBar(total){
+  _gallerySelectTotal=total;
+  const n=gallerySelectedIds.size;
+  document.getElementById('selectCount').textContent=n+' selected';
+  document.getElementById('selectAllToggleBtn').textContent=(total>0&&n>=total)?'Deselect all':'Select all';
+  const dlBtn=document.getElementById('selectDownloadBtn');
+  dlBtn.textContent='Download ('+n+')';dlBtn.disabled=n===0;
+}
+async function renderGallery(){
+  const strip=document.getElementById('galleryStrip');
+  if(!strip)return;
+  _galleryObjectUrls.forEach(u=>URL.revokeObjectURL(u));_galleryObjectUrls=[];
+  let items=[];
+  try{ items=await galleryGetAll(); }
+  catch(e){ console.error('Gallery load failed:',e); strip.innerHTML='<div class="galleryEmptyMsg">Saved-chart gallery is unavailable in this browser.</div>'; return; }
+  strip.innerHTML='';
+  if(!items.length){
+    strip.innerHTML='<div class="galleryEmptyMsg">No saved charts yet — paste data or load a project to get started.</div>';
+    if(gallerySelectionMode){gallerySelectionMode=false;gallerySelectedIds=new Set();}   // nothing left to select
+  }else{
+    // Self-heal order into a canonical, gap-free 0..N-1 sequence matching what's actually displayed —
+    // fixes legacy records (saved before drag-reorder existed) and any drift, on every render.
+    items.forEach((rec,i)=>{ if(rec.order!==i){rec.order=i;galleryPut(rec).catch(console.error);} });
+    // Badge number = position in this same order (1-based); recomputed fresh every render, so a delete,
+    // a new save, or a drag-drop always renumbers everything with no gaps and no separate counter.
+    items.forEach((rec,i)=>strip.appendChild(galleryCard(rec,i+1)));
+    if(!gallerySelectionMode)wireGalleryDnD(strip);   // no dragging while selecting
+  }
+  if(!gallerySelectionMode)strip.appendChild(buildAddTile());   // hidden while selecting; not a drag target otherwise
+  document.getElementById('galleryHeadNormal').hidden=gallerySelectionMode;
+  document.getElementById('galleryHeadSelect').hidden=!gallerySelectionMode;
+  if(gallerySelectionMode)updateSelectionBar(items.length);
+}
+function galleryCard(rec,num){
+  const card=document.createElement('div');card.className='galleryCard';card.dataset.id=rec.id;
+  card.draggable=!gallerySelectionMode;
+  const selected=gallerySelectionMode&&gallerySelectedIds.has(rec.id);
+  if(selected)card.classList.add('selected');
+  // "currently open in the editor" ring — skipped during bulk-select mode so it's never confused with .selected
+  if(!gallerySelectionMode&&rec.id===currentGalleryId)card.classList.add('active');
+  let thumbHtml='<span class="galleryThumbEmpty">No data yet</span>';   // placeholder — replaced once a real thumbnail exists
+  if(rec.thumb){const url=URL.createObjectURL(rec.thumb);_galleryObjectUrls.push(url);thumbHtml=`<img src="${url}" alt="">`;}
+  const badgeHtml=gallerySelectionMode
+    ? `<span class="gallerySelectMark" data-select>${selected?'✓':''}</span>`
+    : `<span class="galleryNum">${num}</span>`;
+  card.innerHTML=`<div class="galleryThumb">${thumbHtml}</div>
+    ${badgeHtml}
+    <div class="galleryMeta"><div class="galleryTitle">${esc(rec.title||'Untitled chart')}</div></div>
+    ${gallerySelectionMode?'':'<div class="galleryIcons"><button class="galleryIconBtn" data-menu title="More" type="button">⋯</button></div>'}`;
+  if(gallerySelectionMode){
+    card.addEventListener('click',e=>{e.stopPropagation();toggleCardSelection(rec.id,card);});
+    return card;
+  }
+  card.addEventListener('click',e=>{ if(e.target.closest('.galleryIcons'))return; openGalleryItem(rec.id); });
+  card.querySelector('[data-menu]').addEventListener('click',e=>{
+    e.stopPropagation();
+    openFloatingMenu(e.currentTarget,'card:'+rec.id,card,
+      `<button data-act="open" type="button">Open</button>
+       <button data-act="exportJson" type="button">Export JSON</button>
+       <button data-act="exportPng" type="button">Export PNG</button>
+       <button data-act="exportSvg" type="button">Export SVG</button>
+       <button data-act="delete" class="danger" type="button">Delete</button>`,
+      act=>{
+        if(act==='open')openGalleryItem(rec.id);
+        else if(act==='exportJson')exportGalleryItemJson(rec.id);
+        else if(act==='exportPng')exportGalleryItemRaster(rec.id,'png');
+        else if(act==='exportSvg')exportGalleryItemRaster(rec.id,'svg');
+        else if(act==='delete')deleteGalleryItem(rec.id);
+      });
+  });
+  return card;
+}
+// Renders each selected chart to a PNG (same rasterize() pipeline as the per-card "Export PNG", just
+// captured as bytes instead of downloaded individually) and bundles them into one zip.
+function sanitizeZipEntryName(s){let name=sanitizeFileName(s)||'Untitled chart';
+  if(name.length>80)name=name.slice(0,80).trim()||'Untitled chart';return name;}
+function zipFileName(){const d=new Date(),pad=n=>(''+n).padStart(2,'0');
+  return `confect-charts-${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}.zip`;}
+async function downloadSelectedAsZip(ids){
+  if(!ids.length)return;
+  const dlBtn=document.getElementById('selectDownloadBtn');const prevTxt=dlBtn.textContent;dlBtn.disabled=true;
+  try{
+    let items=[];try{items=await galleryGetAll();}catch(e){}
+    const numById={};items.forEach((r,i)=>{numById[r.id]=i+1;});
+    const rendered=[];
+    for(let i=0;i<ids.length;i++){
+      dlBtn.textContent=`Preparing ${i+1}/${ids.length}…`;
+      try{ await withGalleryProject(ids[i],async rec=>{ rendered.push({rec,blob:await rasterize({fileType:'png'})}); }); }
+      catch(e){ console.error('Zip: failed to render chart',ids[i],e); }
+    }
+    if(!rendered.length){ alert('Could not prepare any of the selected charts.'); return; }
+    const files=await Promise.all(rendered.map(async r=>({
+      name:`${numById[r.rec.id]||'0'}-${sanitizeZipEntryName(r.rec.title)}.png`,
+      data:new Uint8Array(await r.blob.arrayBuffer())
+    })));
+    dl(buildZip(files),zipFileName());
+    exitGallerySelection();
+  }catch(e){ alert('Zip download failed: '+e.message); console.error(e); }
+  finally{ dlBtn.disabled=false;dlBtn.textContent=prevTxt; }
+}
+// Pure DOM/state reset to "nothing loaded yet" — no gallery interaction of its own. Used both by the "+"
+// tile (which then creates a fresh placeholder record below) and by re-opening an existing blank-
+// placeholder card (which just rebinds the editor to that SAME record instead of making a new one).
+function resetEditorToBlank(){
+  document.getElementById('rawdata').value='';
+  document.getElementById('parseErr').textContent='';
+  document.getElementById('dataInfo').textContent='';
+  document.getElementById('stage').innerHTML='';
+  DATA=null;S=null;
+  ['s-type','s-map','s-groups'].forEach(id=>document.getElementById(id).style.display='none');
+  document.getElementById('rawdata').focus();
+}
+// "+" tile — an empty card-shaped slot always last in the strip. One action, no menu: resets the editor to
+// blank AND immediately creates a placeholder gallery card for it (project:null, thumb:null — see
+// galleryCard()'s placeholder rendering), so it's visible in "My Charts" right away rather than only once
+// data is pasted and a chart actually renders. The first successful load into this blank chart (paste +
+// Load data, or Share -> Load) updates this SAME record in place — see loadRaw()/loadProjectFile()'s
+// fillingBlankPlaceholder check — rather than leaving this placeholder behind as an orphaned duplicate.
+async function createBlankPlaceholder(){
+  resetEditorToBlank();
+  const now=Date.now();
+  const rec={id:newGalleryId(),title:'Untitled chart',order:await nextGalleryOrder(),createdAt:now,updatedAt:now,project:null,thumb:null};
+  currentGalleryId=rec.id;
+  await galleryPut(rec);await renderGallery();
+}
+function buildAddTile(){
+  const tile=document.createElement('div');tile.className='galleryAddTile';tile.title='Start a new blank chart';
+  tile.innerHTML=`<span class="galleryAddPlus">+</span>`;
+  tile.addEventListener('click',e=>{ e.stopPropagation(); createBlankPlaceholder(); });
+  return tile;
+}
+/* Shared floating menu — one #galleryCardMenu element reused by every trigger, so the positioning/flip
+   logic (and the overflow:hidden-escaping position:fixed trick) only has to be written once. */
+let _menuAssocEl=null;
+function openFloatingMenu(btn,ctxId,assocEl,itemsHtml,onAction){
+  const menu=document.getElementById('galleryCardMenu');
+  const wasOpenForThis=menu.classList.contains('open')&&menu.dataset.ctx===ctxId;
+  closeAllGalleryMenus();closeColorPicker();
+  if(wasOpenForThis)return;   // clicking the same trigger again just closes it
+  menu.dataset.ctx=ctxId;menu._onAction=onAction;
+  menu.innerHTML=itemsHtml;
+  if(assocEl){assocEl.classList.add('menuOpen');_menuAssocEl=assocEl;}
+  menu.classList.add('open');
+  positionGalleryCardMenu(menu,btn);
+}
+// Fixed-position placement from the trigger button's rect, flipped up/left when the default
+// down-right-aligned placement would run off the viewport — works the same near any grid edge.
+function positionGalleryCardMenu(menu,btn){
+  const margin=6,r=btn.getBoundingClientRect();
+  menu.style.left='-9999px';menu.style.top='-9999px';   // off-screen for one layout pass so we can measure it
+  const mw=menu.offsetWidth,mh=menu.offsetHeight;
+  let left=r.right-mw;                                    // default: right-align under the trigger
+  if(left<margin)left=r.left;                              // not enough room left -> align to its left edge instead
+  left=Math.max(margin,Math.min(left,window.innerWidth-mw-margin));
+  let top=r.bottom+4;
+  if(top+mh>window.innerHeight-margin)top=r.top-mh-4;      // not enough room below -> flip above the trigger
+  top=Math.max(margin,Math.min(top,window.innerHeight-mh-margin));
+  menu.style.left=left+'px';menu.style.top=top+'px';
+}
+function closeAllGalleryMenus(){
+  const menu=document.getElementById('galleryCardMenu');if(!menu)return;
+  menu.classList.remove('open');menu.dataset.ctx='';menu._onAction=null;
+  if(_menuAssocEl){_menuAssocEl.classList.remove('menuOpen');_menuAssocEl=null;}
+}
+function galleryCardMenuClick(e){
+  const b=e.target.closest('button[data-act]');if(!b)return;
+  e.stopPropagation();
+  const menu=document.getElementById('galleryCardMenu'),onAction=menu._onAction;
+  closeAllGalleryMenus();
+  if(onAction)onAction(b.dataset.act);
+}
+// Horizontal drag-and-drop reorder (mirrors wireDnD() for the group list, but left/right instead of
+// up/down since cards lay out in a row). On drop, the new left-to-right DOM order becomes each record's
+// persisted `order`, then a re-render gives every card its correct, gap-free badge number.
+function wireGalleryDnD(strip){
+  let drag=null;
+  strip.querySelectorAll('.galleryCard').forEach(card=>{
+    card.addEventListener('dragstart',()=>{drag=card;card.classList.add('dragging');closeAllGalleryMenus();});
+    card.addEventListener('dragend',async ()=>{
+      card.classList.remove('dragging');
+      strip.querySelectorAll('.galleryCard').forEach(x=>x.classList.remove('over'));
+      const ids=[...strip.querySelectorAll('.galleryCard')].map(x=>x.dataset.id);
+      await persistGalleryOrder(ids);
+      renderGallery();
+    });
+    card.addEventListener('dragover',e=>{
+      e.preventDefault();
+      const r=card.getBoundingClientRect();const after=(e.clientX-r.left)/r.width>0.5;
+      card.classList.add('over');
+      if(drag&&drag!==card){
+        // only actually move the node (and animate) when the drop position would genuinely change —
+        // dragover fires continuously, so skip the no-op case to avoid layout thrashing/re-triggering
+        const noop=after?card.nextElementSibling===drag:card.previousElementSibling===drag;
+        if(!noop)flipMove(strip,drag,()=>{ if(after)card.after(drag); else card.before(drag); });
+      }
+    });
+    card.addEventListener('dragleave',()=>card.classList.remove('over'));
+  });
+}
+// FLIP technique: record every OTHER card's position, run the DOM mutation (which "snaps" everything to
+// its new layout), then for each card that actually moved, apply the inverse transform and immediately
+// transition it back to identity — the cards that made room visibly slide into their new slots instead
+// of jumping. The dragged card itself just fades back in on drop (see .galleryCard's opacity transition).
+function flipMove(strip,dragEl,mutate){
+  const others=[...strip.querySelectorAll('.galleryCard')].filter(x=>x!==dragEl);
+  const before=new Map(others.map(x=>[x,x.getBoundingClientRect()]));
+  mutate();
+  others.forEach(x=>{
+    const b=before.get(x),a=x.getBoundingClientRect(),dx=b.left-a.left;
+    if(!dx)return;
+    x.style.transition='none';
+    x.style.transform=`translateX(${dx}px)`;
+    // double rAF: guarantees the browser has painted the inverted position before we re-enable the
+    // transition and clear it — a single rAF can race the paint in some engines and skip the animation
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      x.style.transition='transform .18s ease';
+      x.style.transform='';
+    }));
+  });
+}
+async function persistGalleryOrder(orderedIds){
+  await Promise.all(orderedIds.map((id,i)=>galleryGet(id).then(rec=>{ if(rec&&rec.order!==i){rec.order=i;return galleryPut(rec);} })));
+}
+async function openGalleryItem(id){
+  try{
+    const rec=await galleryGet(id);
+    if(!rec){alert('That saved chart could not be found (it may have been deleted).');await renderGallery();return;}
+    if(!rec.project){ resetEditorToBlank(); }        // still-empty placeholder — nothing to applyProject(), just rebind to it
+    else applyProject(rec.project);
+    currentGalleryId=rec.id;
+    await renderGallery();   // moves the active-card highlight onto this card right away, not after the next autosave
+  }catch(e){alert('Could not open saved chart: '+e.message);console.error(e);}
+}
+// On-brand replacement for native confirm() — resolves true/false, Escape/backdrop-click/Cancel = false,
+// Enter/OK = true. One shared overlay (see #confirmOverlay), reused for every call.
+function confirmDialog(opts){
+  opts=opts||{};
+  return new Promise(resolve=>{
+    const overlay=document.getElementById('confirmOverlay');
+    document.getElementById('confirmTitle').textContent=opts.title||'Are you sure?';
+    document.getElementById('confirmMsg').textContent=opts.message||'';
+    const okBtn=document.getElementById('confirmOkBtn'),cancelBtn=document.getElementById('confirmCancelBtn');
+    okBtn.textContent=opts.okText||'OK';cancelBtn.textContent=opts.cancelText||'Cancel';
+    okBtn.className='btn sm '+(opts.danger?'danger':'primary');
+    const done=result=>{overlay.classList.remove('open');
+      okBtn.removeEventListener('click',onOk);cancelBtn.removeEventListener('click',onCancel);
+      overlay.removeEventListener('mousedown',onBackdrop);document.removeEventListener('keydown',onKey);
+      resolve(result);};
+    const onOk=()=>done(true),onCancel=()=>done(false);
+    const onBackdrop=e=>{if(e.target===overlay)done(false);};
+    const onKey=e=>{if(e.key==='Escape'){e.preventDefault();done(false);}else if(e.key==='Enter'){e.preventDefault();done(true);}};
+    okBtn.addEventListener('click',onOk);cancelBtn.addEventListener('click',onCancel);
+    overlay.addEventListener('mousedown',onBackdrop);document.addEventListener('keydown',onKey);
+    overlay.classList.add('open');okBtn.focus();
+  });
+}
+async function deleteGalleryItem(id){
+  const ok=await confirmDialog({title:'Delete this saved chart?',message:'This cannot be undone.',okText:'Delete',danger:true});
+  if(!ok)return;
+  await galleryDelete(id);if(currentGalleryId===id)currentGalleryId=null;
+  await renderGallery();
+}
+function exportGalleryItemJson(id){
+  galleryGet(id).then(rec=>{ if(!rec)return; dl(new Blob([JSON.stringify(rec.project,null,2)],{type:'application/json'}),projectFileName(rec.project)+'.confectchart.json'); })
+    .catch(e=>alert('Export failed: '+e.message));
+}
+// Briefly swaps the live editor to a gallery item's project, runs fn (an export), then restores — reuses
+// the real render()/export pipeline instead of a second off-screen renderer. #exportVeil hides the swap.
+// Auto-save is suspended for the duration so the temporary swapped-in project never gets written over the
+// real record; the restoring render() at the end re-arms it for whatever was actually live before this.
+async function withGalleryProject(id,fn){
+  const rec=await galleryGet(id);if(!rec)throw new Error('That saved chart could not be found.');
+  const veil=document.getElementById('exportVeil');veil.style.display='flex';
+  const savedRaw=document.getElementById('rawdata').value,savedData=DATA,savedS=S,savedGalId=currentGalleryId;
+  clearTimeout(_autoSaveTimer);_autoSaveSuspended=true;
+  try{ applyProject(rec.project); await fn(rec); }
+  finally{
+    DATA=savedData;S=savedS;currentGalleryId=savedGalId;
+    document.getElementById('rawdata').value=savedRaw;
+    _autoSaveSuspended=false;
+    if(DATA){showControls();sync();render();}
+    veil.style.display='none';
+  }
+}
+async function exportGalleryItemRaster(id,kind){
+  try{ await withGalleryProject(id,async ()=>{ if(kind==='svg')exportSVG(); else await exportPNG(); }); }
+  catch(e){ alert('Export failed: '+e.message); console.error(e); }
+}
+/* ---------- EVENTS ---------- */
+window.addEventListener('DOMContentLoaded',()=>{
   grabLogo();
   const ff=document.createElement('style');ff.id='fontfaceStyle';
   ff.textContent=[...document.styleSheets[0].cssRules].filter(r=>r.type===CSSRule.FONT_FACE_RULE).map(r=>r.cssText).join('\n');document.head.appendChild(ff);
@@ -1275,17 +1865,52 @@ document.getElementById('aiGo').addEventListener('click', aiSend);
   $('addSkip').onclick=()=>{S.slots.unshift('__skip'+(skipId++));buildGroupList();render();};
   $('selAll').onclick=()=>{S.hidden=new Set();buildGroupList();render();};
   $('deselAll').onclick=()=>{S.hidden=new Set(DATA.rows.map(r=>r.key));buildGroupList();render();};
+  $('resetAllColorsBtn').onclick=resetAllGroupColors;
   document.querySelectorAll('#bgSeg button').forEach(b=>b.onclick=()=>{S.bg=b.dataset.bg;sync();updateExpDims();});
   document.querySelectorAll('#secSeg button').forEach(b=>b.onclick=()=>{S.secondary=b.dataset.sec;sync();render();});
   document.querySelectorAll('#ftSeg button').forEach(b=>b.onclick=()=>{S.fileType=b.dataset.ft;sync();});
   $('formatSel').onchange=e=>{S.format=e.target.value;sync();render();};
   $('cw').oninput=()=>render();$('ch').oninput=()=>render();
   document.querySelectorAll('#scaleSeg button').forEach(b=>b.onclick=()=>{S.expScale=+b.dataset.sc;sync();updateExpDims();});
-  $('pngBtn').onclick=doExport;
+  $('pngBtn').onclick=enterGallerySelection;   // "Export PNG" launches the multi-select + zip flow (was "Download All")
   $('copyBtn').onclick=()=>copyExport().catch(e=>alert('Copy failed: '+e.message));
-  $('expGear').onclick=e=>{e.stopPropagation();$('expPop').classList.toggle('open');updateExpDims();};
+  $('expGear').onclick=e=>{e.stopPropagation();$('dataPop').classList.remove('open');$('sharePop').classList.remove('open');
+    $('expPop').classList.toggle('open');if($('expPop').classList.contains('open'))positionGalleryCardMenu($('expPop'),$('expGear'));
+    updateExpDims();};
+  $('dataBtn').onclick=e=>{e.stopPropagation();$('expPop').classList.remove('open');$('sharePop').classList.remove('open');
+    $('dataPop').classList.toggle('open');if($('dataPop').classList.contains('open'))positionGalleryCardMenu($('dataPop'),$('dataBtn'));};
+  $('shareBtn').onclick=e=>{e.stopPropagation();$('expPop').classList.remove('open');$('dataPop').classList.remove('open');
+    $('sharePop').classList.toggle('open');if($('sharePop').classList.contains('open'))positionGalleryCardMenu($('sharePop'),$('shareBtn'));};
+  // each Data/Share row closes its own panel right after firing its (unchanged) action below
+  document.querySelectorAll('#dataPop .shareRow, #sharePop .shareRow').forEach(b=>b.addEventListener('click',()=>{$('dataPop').classList.remove('open');$('sharePop').classList.remove('open');}));
   document.addEventListener('click',e=>{if(!e.target.closest('#expPop')&&e.target.id!=='expGear')$('expPop').classList.remove('open');
+    if(!e.target.closest('#dataPop')&&e.target.id!=='dataBtn')$('dataPop').classList.remove('open');
+    if(!e.target.closest('#sharePop')&&e.target.id!=='shareBtn')$('sharePop').classList.remove('open');
     if(!e.target.closest('#stepsCtl')&&!(e.target.closest('[data-edit="steps"]')))$('stepsCtl').style.display='none';});
+  document.addEventListener('keydown',e=>{if(e.key==='Escape'){$('expPop').classList.remove('open');$('dataPop').classList.remove('open');$('sharePop').classList.remove('open');}});
+  // project download/load (file) + My Charts gallery (auto-saved to IndexedDB, no manual Save button)
+  $('projDownloadBtn').onclick=()=>{if(!DATA){alert('Load some data first.');return;}downloadProjectFile();};
+  $('projLoadBtn').onclick=()=>{$('projFileInput').click();};
+  $('projFileInput').onchange=e=>{const f=e.target.files[0];e.target.value='';if(f)loadProjectFile(f);};
+  window.addEventListener('dragover',e=>{e.preventDefault();document.body.classList.add('dragging-file');});
+  window.addEventListener('dragleave',e=>{if(!e.relatedTarget)document.body.classList.remove('dragging-file');});
+  window.addEventListener('drop',e=>{e.preventDefault();document.body.classList.remove('dragging-file');
+    const file=e.dataTransfer&&[...(e.dataTransfer.files||[])].find(f=>/\.json$/i.test(f.name));
+    if(file)loadProjectFile(file);});
+  document.addEventListener('click',()=>{closeAllGalleryMenus();closeColorPicker();});
+  document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeAllGalleryMenus();closeColorPicker();}});
+  $('galleryCardMenu').addEventListener('click',galleryCardMenuClick);
+  window.addEventListener('resize',()=>{closeAllGalleryMenus();closeColorPicker();});
+  $('galleryStrip').addEventListener('scroll',closeAllGalleryMenus);
+  // clicks/drags inside the colour picker itself must never bubble to the document-level "close" handler
+  // above (a click on the native <input type=color> would otherwise close the popover it lives in)
+  $('colorPicker').addEventListener('mousedown',e=>e.stopPropagation());
+  $('colorPicker').addEventListener('click',e=>e.stopPropagation());
+  // bulk download (zip) — entry point is now the toolbar's "Export PNG" (see pngBtn.onclick above)
+  $('selectAllToggleBtn').onclick=toggleSelectAll;
+  $('selectCancelBtn').onclick=exitGallerySelection;
+  $('selectDownloadBtn').onclick=()=>downloadSelectedAsZip([...gallerySelectedIds]);
+  renderGallery();
   // steps control (± keeps the control open)
   document.querySelectorAll('#stepsCtl button').forEach(b=>b.addEventListener('click',ev=>{ev.stopPropagation();let n=S.tickCount;
     if(b.dataset.step==='+')n=n===0?5:Math.min(12,n+1);else n=n===0?0:(n<=2?0:n-1);
@@ -1304,7 +1929,7 @@ document.getElementById('aiGo').addEventListener('click', aiSend);
   $('hlBtn').addEventListener('mousedown',e=>e.preventDefault());
   $('hlBtn').addEventListener('click',toggleHighlight);
   window.addEventListener('resize',()=>{inp.style.display='none';$('stepsCtl').style.display='none';fitCanvas();positionInline();});
-  $('rawdata').value=SAMPLE1;loadRaw(SAMPLE1);
+  $('rawdata').value=SAMPLE1;loadRaw(SAMPLE1,{silent:true});
 });
 
 /* ---------- SAMPLES ---------- */
