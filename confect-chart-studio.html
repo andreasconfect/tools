@@ -747,6 +747,54 @@
         gap: 8px;
         margin-top: 20px;
       }
+      .loadingBox {
+        text-align: center;
+      }
+      .loadingSpinner {
+        width: 32px;
+        height: 32px;
+        margin: 2px auto 14px;
+        border: 3px solid #ece6f7;
+        border-top-color: var(--purple);
+        border-radius: 50%;
+        animation: loadingSpin 0.8s linear infinite;
+      }
+      @keyframes loadingSpin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .loadingBarTrack {
+        height: 8px;
+        border-radius: 999px;
+        background: #ece6f7;
+        overflow: hidden;
+        margin: 14px 0 2px;
+      }
+      .loadingBarFill {
+        height: 100%;
+        width: 0%;
+        background: var(--purple);
+        border-radius: 999px;
+        transition: width 0.15s ease-out;
+      }
+      .loadingErrorBox {
+        margin-top: 12px;
+        padding: 10px 12px;
+        border-radius: 8px;
+        background: #fdedec;
+        color: #c0392b;
+        font-size: 12.5px;
+        line-height: 1.5;
+        text-align: left;
+        white-space: pre-wrap;
+      }
+      .loadingBox .confirmBtns {
+        justify-content: center;
+      }
+      #loadingBtns[hidden] {
+        display: none;
+      } /* explicit override — .confirmBtns' display:flex above would otherwise beat the UA [hidden] rule */
       body.dragging-file::after {
         content: 'Drop a .confectchart.json file to load it';
         position: fixed;
@@ -803,10 +851,10 @@
         color: var(--subtitle);
         min-width: 52px;
       }
-      /* bulk-download selection mode — a second .galleryHead swapped in for the normal one */
+      /* bulk-download selection mode — a second .galleryHead swapped in for the normal one. "Select all" sits
+   at the far left; #selectCount's margin-left:auto pushes it and the action buttons to the right. */
       .gallerySelectBar {
         background: #faf8fe;
-        justify-content: flex-end; /* whole bar clusters to the right, above the grid */
       }
       #selectCount {
         font-size: 11.5px;
@@ -867,14 +915,15 @@
         box-shadow: 0 0 0 2px var(--purple);
       } /* the chart currently open in the editor */
       /* Always-visible per-card checkbox — top-RIGHT corner, mirroring .galleryNum's badge at top-left.
-   Circular check-mark styling (not a native <input>) so it reads clearly over any thumbnail. */
+   Square check-mark styling (not a native <input>, to match how .rlist's checkboxes are simple squares) so
+   it reads clearly over any thumbnail. */
       .gallerySelectMark {
         position: absolute;
         top: 5px;
         right: 5px;
         width: 18px;
         height: 18px;
-        border-radius: 50%;
+        border-radius: 4px;
         z-index: 2;
         border: 1.5px solid #fff;
         background: rgba(30, 32, 56, 0.35);
@@ -1393,7 +1442,20 @@
               id="galleryActionBar"
               hidden
             >
-              <span id="selectCount">0 selected</span>
+              <button class="tbtn" id="selectAllToggleBtn" type="button">
+                Select all
+              </button>
+              <span id="selectCount" style="margin-left: auto">0 selected</span>
+              <button
+                class="btn primary sm"
+                id="selectBundleBtn"
+                type="button"
+              >
+                Download (0)
+              </button>
+              <button class="btn ghost sm" id="selectPngBtn" type="button">
+                Export PNG (0)
+              </button>
               <button
                 class="btn ghost sm"
                 id="selectDuplicateBtn"
@@ -1403,16 +1465,6 @@
               </button>
               <button class="btn danger sm" id="selectDeleteBtn" type="button">
                 Delete (0)
-              </button>
-              <button class="btn ghost sm" id="selectPngBtn" type="button">
-                Export PNG (0)
-              </button>
-              <button
-                class="btn primary sm"
-                id="selectBundleBtn"
-                type="button"
-              >
-                Download (0)
               </button>
             </div>
             <div id="galleryStrip" class="galleryStrip"></div>
@@ -1433,6 +1485,25 @@
           </button>
           <button class="btn primary sm" id="confirmOkBtn" type="button">
             OK
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Loading modal — shown for every Load (single-chart or multi-slide bundle) so parsing/applying a file
+   never reads as a silent freeze or page "refresh". See openLoadingModal()/updateLoadingProgress() etc. -->
+    <div id="loadingOverlay" class="confirmOverlay">
+      <div class="confirmBox loadingBox">
+        <div class="loadingSpinner" id="loadingSpinner"></div>
+        <div class="confirmTitle" id="loadingTitle">Loading chart…</div>
+        <div class="loadingBarTrack" id="loadingBarTrack" hidden>
+          <div class="loadingBarFill" id="loadingBarFill"></div>
+        </div>
+        <div class="confirmMsg" id="loadingSub"></div>
+        <div class="loadingErrorBox" id="loadingErrorBox" hidden></div>
+        <div class="confirmBtns" id="loadingBtns" hidden>
+          <button class="btn primary sm" id="loadingCloseBtn" type="button">
+            Close
           </button>
         </div>
       </div>
@@ -4632,6 +4703,7 @@
           valueMode: 'delta',
           showHead: true,
           headline: '',
+          headlineAuto: true, // false once the user manually edits the main headline — see commitRich()/commitRichLive()
           showSub: true,
           subhead: defaultSub(),
           showInfo: true,
@@ -4703,7 +4775,7 @@
         const pm0 = selMetrics()[0] || all[0];
         S.axisMode =
           S.type === 'diverging' && hasDeltaM(pm0) ? 'delta' : 'absolute';
-        S.headline = defaultHeadline();
+        if (S.headlineAuto) S.headline = defaultHeadline();
         sync();
         render();
       }
@@ -4761,7 +4833,7 @@
           ib = S.metricOrder.indexOf(b);
         S.metricOrder[ia] = b;
         S.metricOrder[ib] = a;
-        S.headline = defaultHeadline();
+        if (S.headlineAuto) S.headline = defaultHeadline();
         buildMetricChips();
         buildGroupList();
         render();
@@ -4784,7 +4856,7 @@
           roleBtns + removeBtn,
           (act) => {
             assignMetricRole(m.header, act);
-            S.headline = defaultHeadline();
+            if (S.headlineAuto) S.headline = defaultHeadline();
             buildMetricChips();
             buildGroupList();
             render();
@@ -4874,7 +4946,7 @@
             if (shown.length > 2) S.metricHidden.add(shown[0].header);
           }
         }
-        S.headline = defaultHeadline();
+        if (S.headlineAuto) S.headline = defaultHeadline();
         buildMetricChips();
         buildGroupList();
         render();
@@ -5411,7 +5483,7 @@
             else out += t;
           }
         });
-        return out.replace(/ /g, ' ');
+        return out.replace(/ /g, ' ');
       }
       function openRich(node) {
         const rich = document.getElementById('richEditor');
@@ -5437,6 +5509,7 @@
         const rich = document.getElementById('richEditor');
         if (rich.style.display === 'none') return;
         S.headline = htmlToStars(rich);
+        S.headlineAuto = false; // manual edit — never overwrite this again from data/metric/type changes
         rich.style.display = 'none';
         document.getElementById('hlbar').style.display = 'none';
         render();
@@ -5445,6 +5518,7 @@
         const rich = document.getElementById('richEditor');
         if (rich.style.display === 'none') return;
         S.headline = htmlToStars(rich);
+        S.headlineAuto = false; // manual edit — never overwrite this again from data/metric/type changes
         render();
       }
       function toggleHighlight() {
@@ -5829,11 +5903,21 @@
         DATA = parseData(proj.rawData); // throws on malformed data — caller shows the message
         initState(); // sets defaults + tiles from the freshly parsed DATA
         const st = proj.state;
+        const missingHeadlineAuto = !('headlineAuto' in st); // pre-headlineAuto-fix save — see migration below
         S = Object.assign(S, st, {
           metricHidden: new Set(st.metricHidden || []),
           hidden: new Set(st.hidden || []),
           tiles: S.tiles,
         });
+        // Migration for projects saved before headlineAuto existed: such a save has no opinion on whether its
+        // headline was auto-generated or hand-edited, and initState()'s true default would wrongly let it start
+        // auto-overwriting a headline someone actually customized. Infer it instead — recompute what
+        // defaultHeadline() would generate for the chart exactly as loaded (type/metrics/groups are already
+        // merged in above) and compare it to the saved text: a match means it was always auto (safe to keep
+        // headlineAuto=true, already set by initState()); a mismatch means someone edited it at some point, so
+        // protect it from here on, same as commitRich()/commitRichLive() would for a fresh manual edit. Projects
+        // that already have a headlineAuto value (from this fix or later) keep exactly what they saved.
+        if (missingHeadlineAuto) S.headlineAuto = S.headline === defaultHeadline();
         skipId =
           1 +
           S.slots.reduce((mx, k) => {
@@ -5858,6 +5942,53 @@
           fileBase() + '.confectchart.json',
         );
       }
+      /* ---------- Loading modal — shown for every Load so parsing/applying a file (which can block the main
+   thread for a moment, especially a multi-slide bundle with sizeable embedded data) never reads as a silent
+   freeze or page refresh. openLoadingModal() shows it; updateLoadingProgress() drives the bar/text live;
+   showLoadingError() switches it into an error state the user dismisses themselves; closeLoadingModal() ends
+   it on success. _uiYield() is the piece that makes progress REAL rather than simulated: awaiting it hands
+   control back to the browser (a rAF tick, then a macrotask) so a just-updated progress bar/text actually
+   PAINTS before the next (potentially blocking) chunk of work runs. ---------- */
+      function openLoadingModal(title) {
+        document.getElementById('loadingSpinner').hidden = false;
+        document.getElementById('loadingTitle').textContent = title || 'Loading…';
+        document.getElementById('loadingSub').textContent = '';
+        document.getElementById('loadingBarTrack').hidden = true;
+        document.getElementById('loadingBarFill').style.width = '0%';
+        document.getElementById('loadingErrorBox').hidden = true;
+        document.getElementById('loadingBtns').hidden = true;
+        document.getElementById('loadingOverlay').classList.add('open');
+      }
+      function setLoadingTitle(title) {
+        document.getElementById('loadingTitle').textContent = title;
+      }
+      function updateLoadingProgress(sub, pct) {
+        document.getElementById('loadingSub').textContent = sub || '';
+        if (pct != null) {
+          document.getElementById('loadingBarTrack').hidden = false;
+          document.getElementById('loadingBarFill').style.width =
+            Math.max(0, Math.min(100, pct)) + '%';
+        }
+      }
+      function showLoadingError(message) {
+        document.getElementById('loadingSpinner').hidden = true;
+        document.getElementById('loadingTitle').textContent =
+          'Couldn’t load that file';
+        document.getElementById('loadingSub').textContent = '';
+        document.getElementById('loadingErrorBox').hidden = false;
+        document.getElementById('loadingErrorBox').textContent = message;
+        document.getElementById('loadingBtns').hidden = false;
+      }
+      function closeLoadingModal() {
+        document.getElementById('loadingOverlay').classList.remove('open');
+      }
+      // A tick that actually reaches the screen: one animation frame (so the browser has a paint queued with
+      // our latest DOM changes) then a macrotask (so that paint has a chance to flush) before resuming.
+      function _uiYield() {
+        return new Promise((resolve) =>
+          requestAnimationFrame(() => setTimeout(resolve, 0)),
+        );
+      }
       // Single "Load" entry point for the File panel — reads the file ONCE, then routes by the parsed JSON's
       // actual SHAPE (not its filename/extension) to whichever existing handler applies: a top-level "charts"
       // array means a multi-slide bundle, imported into the gallery below; anything else is treated as a
@@ -5866,27 +5997,35 @@
       async function loadAnyProjectFile(file) {
         const err = document.getElementById('parseErr');
         if (err) err.textContent = '';
+        openLoadingModal('Loading chart…');
+        await _uiYield(); // paint the modal BEFORE the (possibly slow, synchronous) file.text()/JSON.parse below
         let parsed;
         try {
           parsed = JSON.parse(await file.text());
         } catch (e) {
-          if (err) err.textContent = '⚠ Could not load that file: ' + e.message;
+          const msg = 'Could not load that file: ' + e.message;
+          if (err) err.textContent = '⚠ ' + msg;
+          showLoadingError(msg);
           console.error('Load failed:', e);
           return;
         }
         if (parsed && typeof parsed === 'object' && Array.isArray(parsed.charts)) {
-          await importChartsBundle(parsed);
+          await importChartsBundle(parsed); // owns the modal from here — progress, then close or show its error
           return;
         }
+        updateLoadingProgress('Reading chart data…');
+        await _uiYield();
         const fillingBlankPlaceholder =
           DATA === null && currentGalleryId != null; // see loadRaw()'s comment — same reasoning
         try {
           applyProject(parsed);
           if (!fillingBlankPlaceholder) currentGalleryId = null;
           autoSaveNow();
+          closeLoadingModal();
         } catch (e) {
-          if (err)
-            err.textContent = '⚠ Could not load project file: ' + e.message;
+          const msg = 'Could not load project file: ' + e.message;
+          if (err) err.textContent = '⚠ ' + msg;
+          showLoadingError(msg);
           console.error('Project load failed:', e);
         }
       }
@@ -5895,22 +6034,30 @@
       // chart inside an otherwise-good bundle reports exactly which entries failed and why, instead of aborting
       // the whole import. Whatever the editor already had open is left exactly as it was — withGalleryProject()
       // below restores it after every chart it renders for a thumbnail, so there is nothing extra to save/
-      // restore around the loop. Called from loadAnyProjectFile() above once the bundle SHAPE is confirmed.
+      // restore around the loop. Called from loadAnyProjectFile() above once the bundle SHAPE is confirmed —
+      // the loading modal is already open at that point; this function drives its progress and owns closing it
+      // (on full success) or leaving its error state up (if anything failed) for the rest of the import.
+      // Processing one chart per loop turn, with a _uiYield() before each, is what makes the progress bar/text
+      // update LIVE as each slide actually finishes, rather than jumping straight from 0 to done.
       async function importChartsBundle(bundle) {
         if (bundle.schemaVersion !== CHARTS_BUNDLE_SCHEMA_VERSION) {
-          alert(
+          showLoadingError(
             `Unsupported multi-slide file version (${bundle.schemaVersion == null ? 'missing' : bundle.schemaVersion}); this build reads version ${CHARTS_BUNDLE_SCHEMA_VERSION}.`,
           );
           return;
         }
         if (!bundle.charts.length) {
-          alert('That file has no charts to import.');
+          showLoadingError('That file has no charts to import.');
           return;
         }
+        setLoadingTitle('Loading slides…');
+        const total = bundle.charts.length;
         let order = await nextGalleryOrder();
         const added = [],
           failed = [];
-        for (let i = 0; i < bundle.charts.length; i++) {
+        for (let i = 0; i < total; i++) {
+          updateLoadingProgress(`Loading slide ${i + 1} of ${total}…`, (i / total) * 100);
+          await _uiYield(); // let that progress update actually paint before this slide's (possibly slow) work
           const proj = bundle.charts[i];
           try {
             if (!proj || typeof proj !== 'object')
@@ -5947,13 +6094,16 @@
           } catch (e) {
             failed.push(`Chart ${i + 1}: ${e.message}`);
           }
+          updateLoadingProgress(`Loading slide ${i + 1} of ${total}…`, ((i + 1) / total) * 100);
         }
         await renderGallery();
         if (failed.length) {
-          alert(
-            `Imported ${added.length} of ${bundle.charts.length} chart${bundle.charts.length === 1 ? '' : 's'}.\n\nCouldn’t import:\n` +
+          showLoadingError(
+            `Imported ${added.length} of ${total} chart${total === 1 ? '' : 's'}.\n\nCouldn’t import:\n` +
               failed.join('\n'),
           );
+        } else {
+          closeLoadingModal();
         }
       }
 
@@ -6148,7 +6298,7 @@
         if (mark) mark.textContent = gallerySelectedIds.has(id) ? '✓' : '';
         updateGalleryActionBar();
       }
-      function updateGalleryActionBar() {
+      async function updateGalleryActionBar() {
         const n = gallerySelectedIds.size;
         const bar = document.getElementById('galleryActionBar');
         bar.hidden = n === 0;
@@ -6162,6 +6312,26 @@
           `Export PNG (${n})`;
         document.getElementById('selectBundleBtn').textContent =
           `Download (${n})`;
+        let total = 0;
+        try {
+          total = (await galleryGetAll()).length;
+        } catch (e) {}
+        document.getElementById('selectAllToggleBtn').textContent =
+          total > 0 && n >= total ? 'Deselect all' : 'Select all';
+      }
+      // Same select-all/deselect-all pattern as the earlier "mode" build: fetch every gallery id, flip to
+      // deselect-all if everything's already checked, else select everything.
+      async function toggleSelectAll() {
+        let items = [];
+        try {
+          items = await galleryGetAll();
+        } catch (e) {}
+        const allSelected =
+          items.length > 0 && items.every((r) => gallerySelectedIds.has(r.id));
+        gallerySelectedIds = allSelected
+          ? new Set()
+          : new Set(items.map((r) => r.id));
+        renderGallery();
       }
       // Uncheck everything and hide the action bar — called once a bulk action (Duplicate/Delete/Export/
       // Download) has finished, back to the normal nothing-checked state. renderGallery() both re-renders the
@@ -6977,8 +7147,10 @@
           e.stopPropagation(),
         );
         $('colorPicker').addEventListener('click', (e) => e.stopPropagation());
+        $('loadingCloseBtn').onclick = closeLoadingModal;
         // gallery multi-select action bar — every card's own checkbox drives gallerySelectedIds; these just
         // run the corresponding bulk action on whatever's currently checked (see updateGalleryActionBar()).
+        $('selectAllToggleBtn').onclick = toggleSelectAll;
         $('selectDuplicateBtn').onclick = () =>
           duplicateSelectedGalleryItems([...gallerySelectedIds]);
         $('selectDeleteBtn').onclick = () =>
