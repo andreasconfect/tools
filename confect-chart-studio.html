@@ -806,6 +806,7 @@
       /* bulk-download selection mode — a second .galleryHead swapped in for the normal one */
       .gallerySelectBar {
         background: #faf8fe;
+        justify-content: flex-end; /* whole bar clusters to the right, above the grid */
       }
       #selectCount {
         font-size: 11.5px;
@@ -865,14 +866,16 @@
         border-color: var(--purple);
         box-shadow: 0 0 0 2px var(--purple);
       } /* the chart currently open in the editor */
+      /* Always-visible per-card checkbox — top-RIGHT corner, mirroring .galleryNum's badge at top-left.
+   Circular check-mark styling (not a native <input>) so it reads clearly over any thumbnail. */
       .gallerySelectMark {
         position: absolute;
         top: 5px;
-        left: 5px;
+        right: 5px;
         width: 18px;
         height: 18px;
         border-radius: 50%;
-        z-index: 1;
+        z-index: 2;
         border: 1.5px solid #fff;
         background: rgba(30, 32, 56, 0.35);
         color: #fff;
@@ -880,6 +883,7 @@
         font-weight: 700;
         line-height: 15px;
         text-align: center;
+        cursor: pointer;
       }
       .galleryCard.selected .gallerySelectMark {
         background: var(--purple);
@@ -937,7 +941,7 @@
       .galleryIcons {
         position: absolute;
         top: 5px;
-        right: 5px;
+        right: 27px; /* shifted left of the always-visible checkbox instead of sharing its corner */
         display: flex;
         gap: 4px;
         opacity: 0;
@@ -1309,21 +1313,6 @@
                   ></span
                 >
               </button>
-              <button
-                class="shareRow"
-                id="downloadAllEditableBtn"
-                title="Bundle several charts into one editable file"
-                type="button"
-              >
-                <span class="shareIcon">⬇</span>
-                <span class="shareText"
-                  ><span class="shareLabel"
-                    >Download all slides (editable)</span
-                  ><span class="shareSub"
-                    >Choose which charts to bundle into one file</span
-                  ></span
-                >
-              </button>
             </div>
             <div class="popover sharePanel" id="sharePop">
               <button class="shareRow" id="copyBtn" type="button">
@@ -1332,15 +1321,6 @@
                   ><span class="shareLabel">Copy PNG</span
                   ><span class="shareSub"
                     >Copy the current chart as an image</span
-                  ></span
-                >
-              </button>
-              <button class="shareRow" id="pngBtn" type="button">
-                <span class="shareIcon">🖼</span>
-                <span class="shareText"
-                  ><span class="shareLabel">Export PNG</span
-                  ><span class="shareSub"
-                    >Choose which charts to download as images</span
                   ></span
                 >
               </button>
@@ -1406,30 +1386,33 @@
               >
               <span id="autoSaveStatus" class="autoSaveStatus"></span>
             </div>
+            <!-- Right-aligned action bar — appears only while >=1 card's checkbox is checked (see
+         updateGalleryActionBar()); the checkbox itself is always on every card, not behind a mode toggle. -->
             <div
               class="galleryHead gallerySelectBar"
-              id="galleryHeadSelect"
+              id="galleryActionBar"
               hidden
             >
               <span id="selectCount">0 selected</span>
-              <button class="tbtn" id="selectAllToggleBtn" type="button">
-                Select all
+              <button
+                class="btn ghost sm"
+                id="selectDuplicateBtn"
+                type="button"
+              >
+                Duplicate (0)
+              </button>
+              <button class="btn danger sm" id="selectDeleteBtn" type="button">
+                Delete (0)
+              </button>
+              <button class="btn ghost sm" id="selectPngBtn" type="button">
+                Export PNG (0)
               </button>
               <button
                 class="btn primary sm"
-                id="selectDownloadBtn"
-                style="margin-left: auto"
+                id="selectBundleBtn"
                 type="button"
               >
                 Download (0)
-              </button>
-              <button
-                class="tbtn"
-                id="selectCancelBtn"
-                title="Cancel"
-                type="button"
-              >
-                ✕
               </button>
             </div>
             <div id="galleryStrip" class="galleryStrip"></div>
@@ -5260,8 +5243,6 @@
           b.classList.toggle('on', b.dataset.ft === S.fileType),
         );
         // update just the label text, not the whole button — a bare .textContent= here would also wipe out the .shareIcon span
-        const pngLbl = document.querySelector('#pngBtn .shareLabel');
-        if (pngLbl) pngLbl.textContent = 'Export ' + S.fileType.toUpperCase();
         const copyLbl = document.querySelector('#copyBtn .shareLabel');
         if (copyLbl) copyLbl.textContent = 'Copy ' + S.fileType.toUpperCase();
       }
@@ -5430,7 +5411,7 @@
             else out += t;
           }
         });
-        return out.replace(/ /g, ' ');
+        return out.replace(/ /g, ' ');
       }
       function openRich(node) {
         const rich = document.getElementById('richEditor');
@@ -6154,62 +6135,40 @@
         }
       }
       let _galleryObjectUrls = [];
-      /* ---- bulk-download selection mode ---- */
-      let gallerySelectionMode = false,
-        gallerySelectedIds = new Set(),
-        gallerySelectionPurpose = 'png'; // 'png' (Export PNG -> zip of images) or 'json' (Download all slides -> one editable bundle)
-      async function enterGallerySelection(purpose) {
-        let items = [];
-        try {
-          items = await galleryGetAll();
-        } catch (e) {}
-        if (!items.length) return; // nothing to select
-        closeAllGalleryMenus();
-        gallerySelectedIds = new Set(items.map((r) => r.id)); // Canva-style: everything starts selected
-        gallerySelectionMode = true;
-        gallerySelectionPurpose = purpose || 'png';
-        await renderGallery();
-      }
-      function exitGallerySelection() {
-        gallerySelectionMode = false;
-        gallerySelectedIds = new Set();
-        renderGallery();
-      }
+      /* ---- gallery multi-select — no separate "mode": every card always has its own checkbox (see
+   galleryCard()), and the right-aligned action bar (Duplicate/Delete/Export PNG/Download all) simply shows
+   itself whenever gallerySelectedIds is non-empty. Everything else about a card (open on click, drag to
+   reorder, the "⋯" menu) keeps working exactly as it does with nothing checked. ---- */
+      let gallerySelectedIds = new Set();
       function toggleCardSelection(id, card) {
         if (gallerySelectedIds.has(id)) gallerySelectedIds.delete(id);
         else gallerySelectedIds.add(id);
         card.classList.toggle('selected', gallerySelectedIds.has(id));
         const mark = card.querySelector('[data-select]');
         if (mark) mark.textContent = gallerySelectedIds.has(id) ? '✓' : '';
-        updateSelectionBar(_gallerySelectTotal);
+        updateGalleryActionBar();
       }
-      async function toggleSelectAll() {
-        let items = [];
-        try {
-          items = await galleryGetAll();
-        } catch (e) {}
-        const allSelected =
-          items.length > 0 && items.every((r) => gallerySelectedIds.has(r.id));
-        gallerySelectedIds = allSelected
-          ? new Set()
-          : new Set(items.map((r) => r.id));
-        renderGallery();
-      }
-      let _gallerySelectTotal = 0;
-      function updateSelectionBar(total) {
-        _gallerySelectTotal = total;
+      function updateGalleryActionBar() {
         const n = gallerySelectedIds.size;
+        const bar = document.getElementById('galleryActionBar');
+        bar.hidden = n === 0;
+        if (n === 0) return;
         document.getElementById('selectCount').textContent = n + ' selected';
-        document.getElementById('selectAllToggleBtn').textContent =
-          total > 0 && n >= total ? 'Deselect all' : 'Select all';
-        const dlBtn = document.getElementById('selectDownloadBtn');
-        dlBtn.textContent =
-          (gallerySelectionPurpose === 'json'
-            ? 'Download slides ('
-            : 'Download (') +
-          n +
-          ')';
-        dlBtn.disabled = n === 0;
+        document.getElementById('selectDuplicateBtn').textContent =
+          `Duplicate (${n})`;
+        document.getElementById('selectDeleteBtn').textContent =
+          `Delete (${n})`;
+        document.getElementById('selectPngBtn').textContent =
+          `Export PNG (${n})`;
+        document.getElementById('selectBundleBtn').textContent =
+          `Download (${n})`;
+      }
+      // Uncheck everything and hide the action bar — called once a bulk action (Duplicate/Delete/Export/
+      // Download) has finished, back to the normal nothing-checked state. renderGallery() both re-renders the
+      // cards unchecked and, via updateGalleryActionBar(), hides the bar.
+      function clearGallerySelection() {
+        gallerySelectedIds = new Set();
+        renderGallery();
       }
       async function renderGallery() {
         const strip = document.getElementById('galleryStrip');
@@ -6229,13 +6188,9 @@
         if (!items.length) {
           strip.innerHTML =
             '<div class="galleryEmptyMsg">No saved charts yet — paste data or load a project to get started.</div>';
-          if (gallerySelectionMode) {
-            gallerySelectionMode = false;
-            gallerySelectedIds = new Set();
-          } // nothing left to select
         } else {
           // Self-heal order into a canonical, gap-free 0..N-1 sequence matching what's actually displayed —
-          // fixes legacy records (saved before drag-reorder existed) and any drift, on every render.
+          // fixes legacy records (saved before drag-reorder existed), any drift, and a bulk Delete/Duplicate.
           items.forEach((rec, i) => {
             if (rec.order !== i) {
               rec.order = i;
@@ -6245,47 +6200,44 @@
           // Badge number = position in this same order (1-based); recomputed fresh every render, so a delete,
           // a new save, or a drag-drop always renumbers everything with no gaps and no separate counter.
           items.forEach((rec, i) => strip.appendChild(galleryCard(rec, i + 1)));
-          if (!gallerySelectionMode) wireGalleryDnD(strip); // no dragging while selecting
+          wireGalleryDnD(strip);
         }
-        if (!gallerySelectionMode) strip.appendChild(buildAddTile()); // hidden while selecting; not a drag target otherwise
-        document.getElementById('galleryHeadNormal').hidden =
-          gallerySelectionMode;
-        document.getElementById('galleryHeadSelect').hidden =
-          !gallerySelectionMode;
-        if (gallerySelectionMode) updateSelectionBar(items.length);
+        strip.appendChild(buildAddTile());
+        // drop any checked ids that no longer exist (deleted, or this is a stale re-render)
+        const existingIds = new Set(items.map((r) => r.id));
+        [...gallerySelectedIds].forEach((id) => {
+          if (!existingIds.has(id)) gallerySelectedIds.delete(id);
+        });
+        updateGalleryActionBar();
       }
       function galleryCard(rec, num) {
         const card = document.createElement('div');
         card.className = 'galleryCard';
         card.dataset.id = rec.id;
-        card.draggable = !gallerySelectionMode;
-        const selected = gallerySelectionMode && gallerySelectedIds.has(rec.id);
+        card.draggable = true;
+        const selected = gallerySelectedIds.has(rec.id);
         if (selected) card.classList.add('selected');
-        // "currently open in the editor" ring — skipped during bulk-select mode so it's never confused with .selected
-        if (!gallerySelectionMode && rec.id === currentGalleryId)
-          card.classList.add('active');
+        if (rec.id === currentGalleryId) card.classList.add('active'); // "currently open in the editor" ring — independent of .selected, both can show at once
         let thumbHtml = '<span class="galleryThumbEmpty">No data yet</span>'; // placeholder — replaced once a real thumbnail exists
         if (rec.thumb) {
           const url = URL.createObjectURL(rec.thumb);
           _galleryObjectUrls.push(url);
           thumbHtml = `<img src="${url}" alt="">`;
         }
-        const badgeHtml = gallerySelectionMode
-          ? `<span class="gallerySelectMark" data-select>${selected ? '✓' : ''}</span>`
-          : `<span class="galleryNum">${num}</span>`;
+        // number badge top-left, checkbox top-right — both always present; checking a card never disturbs its
+        // normal click-to-open / drag / "⋯" menu behaviour.
         card.innerHTML = `<div class="galleryThumb">${thumbHtml}</div>
-    ${badgeHtml}
+    <span class="galleryNum">${num}</span>
+    <span class="gallerySelectMark" data-select title="Select">${selected ? '✓' : ''}</span>
     <div class="galleryMeta"><div class="galleryTitle">${esc(rec.title || 'Untitled chart')}</div></div>
-    ${gallerySelectionMode ? '' : '<div class="galleryIcons"><button class="galleryIconBtn" data-menu title="More" type="button">⋯</button></div>'}`;
-        if (gallerySelectionMode) {
-          card.addEventListener('click', (e) => {
-            e.stopPropagation();
-            toggleCardSelection(rec.id, card);
-          });
-          return card;
-        }
+    <div class="galleryIcons"><button class="galleryIconBtn" data-menu title="More" type="button">⋯</button></div>`;
+        card.querySelector('[data-select]').addEventListener('click', (e) => {
+          e.stopPropagation();
+          toggleCardSelection(rec.id, card);
+        });
         card.addEventListener('click', (e) => {
-          if (e.target.closest('.galleryIcons')) return;
+          if (e.target.closest('.galleryIcons') || e.target.closest('[data-select]'))
+            return;
           openGalleryItem(rec.id);
         });
         card.querySelector('[data-menu]').addEventListener('click', (e) => {
@@ -6327,7 +6279,7 @@
       }
       async function downloadSelectedAsZip(ids) {
         if (!ids.length) return;
-        const dlBtn = document.getElementById('selectDownloadBtn');
+        const dlBtn = document.getElementById('selectPngBtn');
         const prevTxt = dlBtn.textContent;
         dlBtn.disabled = true;
         try {
@@ -6364,7 +6316,7 @@
             })),
           );
           dl(buildZip(files), zipFileName());
-          exitGallerySelection();
+          clearGallerySelection();
         } catch (e) {
           alert('Zip download failed: ' + e.message);
           console.error(e);
@@ -6383,7 +6335,7 @@
       // Still-blank placeholder cards (project:null) have nothing editable to include, so they're skipped.
       async function downloadSelectedAsBundle(ids) {
         if (!ids.length) return;
-        const dlBtn = document.getElementById('selectDownloadBtn');
+        const dlBtn = document.getElementById('selectBundleBtn');
         const prevTxt = dlBtn.textContent;
         dlBtn.disabled = true;
         try {
@@ -6414,13 +6366,94 @@
             }),
             bundleFileName(),
           );
-          exitGallerySelection();
+          clearGallerySelection();
         } catch (e) {
           alert('Download failed: ' + e.message);
           console.error(e);
         } finally {
           dlBtn.disabled = false;
           dlBtn.textContent = prevTxt;
+        }
+      }
+      // Bulk counterpart to deleteGalleryItem() — same one-confirmation-for-everything pattern as the single-
+      // card delete, just naming the count instead of "this saved chart". If the currently active/open chart is
+      // among those deleted, only its currentGalleryId binding is cleared (so a later edit creates a fresh
+      // record instead of resurrecting the deleted one) — the live editor's own content is left exactly as is,
+      // same rule the single-card delete already follows.
+      async function deleteSelectedGalleryItems(ids) {
+        if (!ids.length) return;
+        const n = ids.length;
+        const ok = await confirmDialog({
+          title: `Delete ${n} chart${n === 1 ? '' : 's'}?`,
+          message: 'This cannot be undone.',
+          okText: 'Delete',
+          danger: true,
+        });
+        if (!ok) return;
+        await Promise.all(
+          ids.map((id) =>
+            galleryDelete(id).catch((e) =>
+              console.error('Bulk delete: failed to delete', id, e),
+            ),
+          ),
+        );
+        if (ids.includes(currentGalleryId)) currentGalleryId = null;
+        clearGallerySelection(); // renders the grid fresh with the deleted cards gone
+      }
+      // Copies each selected chart's full editable data (project + thumbnail) into a brand-new gallery entry,
+      // titled "<original> copy" so it reads distinctly from the source — the headline inside the duplicated
+      // project is renamed too where there is one, so the "copy" marker survives future edits/re-saves of the
+      // duplicate, not just its initial card title. Still-blank placeholder cards (project:null) have nothing to
+      // copy and are silently skipped. renderGallery()'s own self-heal (via clearGallerySelection()) renumbers
+      // the grid gap-free afterwards, same as any other add/delete.
+      async function duplicateSelectedGalleryItems(ids) {
+        if (!ids.length) return;
+        const dupBtn = document.getElementById('selectDuplicateBtn');
+        const prevTxt = dupBtn.textContent;
+        dupBtn.disabled = true;
+        try {
+          let items = [];
+          try {
+            items = await galleryGetAll();
+          } catch (e) {}
+          const byId = {};
+          items.forEach((r) => (byId[r.id] = r));
+          let order = await nextGalleryOrder();
+          const now = Date.now();
+          const dupes = [];
+          for (const id of ids) {
+            const rec = byId[id];
+            if (!rec || !rec.project) continue; // nothing editable to copy
+            const dupProject = JSON.parse(JSON.stringify(rec.project)); // plain JSON data — same shape buildProject() emits
+            if (
+              dupProject.state &&
+              typeof dupProject.state.headline === 'string' &&
+              dupProject.state.headline.trim()
+            ) {
+              dupProject.state.headline = dupProject.state.headline + ' copy';
+            }
+            dupes.push({
+              id: newGalleryId(),
+              title: (rec.title || 'Untitled chart') + ' copy',
+              order: order++,
+              createdAt: now,
+              updatedAt: now,
+              project: dupProject,
+              thumb: rec.thumb || null, // Blobs are immutable — safe to reuse the same one across two records
+            });
+          }
+          if (!dupes.length) {
+            alert('None of the selected charts have data yet — nothing to duplicate.');
+            return;
+          }
+          await Promise.all(dupes.map((d) => galleryPut(d)));
+          clearGallerySelection();
+        } catch (e) {
+          alert('Duplicate failed: ' + e.message);
+          console.error(e);
+        } finally {
+          dupBtn.disabled = false;
+          dupBtn.textContent = prevTxt;
         }
       }
       // Pure DOM/state reset to "nothing loaded yet" — no gallery interaction of its own. Used both by the "+"
@@ -6833,9 +6866,6 @@
               updateExpDims();
             }),
         );
-        $('pngBtn').onclick = () => enterGallerySelection('png'); // "Export PNG" launches the multi-select + zip flow (was "Download All")
-        $('downloadAllEditableBtn').onclick = () =>
-          enterGallerySelection('json'); // "Download all slides (editable)" reuses the SAME multi-select UI, bundled as JSON instead
         $('copyBtn').onclick = () =>
           copyExport().catch((e) => alert('Copy failed: ' + e.message));
         $('expGear').onclick = (e) => {
@@ -6947,14 +6977,16 @@
           e.stopPropagation(),
         );
         $('colorPicker').addEventListener('click', (e) => e.stopPropagation());
-        // bulk download — entry points are the toolbar's "Export PNG" and "Download all slides (editable)" (see
-        // their .onclick above); which one to run is decided by gallerySelectionPurpose set when entering.
-        $('selectAllToggleBtn').onclick = toggleSelectAll;
-        $('selectCancelBtn').onclick = exitGallerySelection;
-        $('selectDownloadBtn').onclick = () =>
-          gallerySelectionPurpose === 'json'
-            ? downloadSelectedAsBundle([...gallerySelectedIds])
-            : downloadSelectedAsZip([...gallerySelectedIds]);
+        // gallery multi-select action bar — every card's own checkbox drives gallerySelectedIds; these just
+        // run the corresponding bulk action on whatever's currently checked (see updateGalleryActionBar()).
+        $('selectDuplicateBtn').onclick = () =>
+          duplicateSelectedGalleryItems([...gallerySelectedIds]);
+        $('selectDeleteBtn').onclick = () =>
+          deleteSelectedGalleryItems([...gallerySelectedIds]);
+        $('selectPngBtn').onclick = () =>
+          downloadSelectedAsZip([...gallerySelectedIds]);
+        $('selectBundleBtn').onclick = () =>
+          downloadSelectedAsBundle([...gallerySelectedIds]);
         renderGallery();
         // steps control (± keeps the control open)
         document.querySelectorAll('#stepsCtl button').forEach((b) =>
