@@ -984,8 +984,30 @@
         font-weight: 700;
         line-height: 16px;
         text-align: center;
-        pointer-events: none;
-        z-index: 1;
+        pointer-events: auto;
+        cursor: pointer;
+        z-index: 3;
+      }
+      .galleryNum:hover {
+        background: var(--purple, #9852db);
+      }
+      .galleryNumInput {
+        width: 30px;
+        height: 16px;
+        padding: 0 2px;
+        border: none;
+        border-radius: 4px;
+        font-size: 10px;
+        font-weight: 700;
+        text-align: center;
+        color: #1e2038;
+        background: #fff;
+        -moz-appearance: textfield;
+      }
+      .galleryNumInput::-webkit-outer-spin-button,
+      .galleryNumInput::-webkit-inner-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
       }
       .galleryIcons {
         position: absolute;
@@ -2729,20 +2751,41 @@
         fitCanvas();
         positionInline();
         scheduleAutoSave(); // debounced — every state-changing render() (any edit) re-arms it, see scheduleAutoSave()
+        scheduleHistory(); // debounced undo/redo snapshot on the same "an edit happened" signal
       }
+      // Split the headline into words, each tagging whether it sits inside a *…* highlight span. Doing this
+      // BEFORE wrapping is what lets a highlight survive a line break: the old code re-parsed "*…*" per rendered
+      // line, so a span split across two lines left an unmatched "*" on each and rendered literal asterisks
+      // (see the "hello world how *are you doing* today?" bug). Words carry the flag through wrapping instead.
+      function tokenizeHeadline(text) {
+        const toks = [];
+        ('' + (text == null ? '' : text))
+          .split(/(\*[^*]+\*)/)
+          .filter((s) => s !== '')
+          .forEach((seg) => {
+            const hl = /^\*[\s\S]+\*$/.test(seg);
+            const inner = hl ? seg.slice(1, -1) : seg;
+            inner.split(/\s+/).forEach((w) => {
+              if (w !== '') toks.push({ w, hl });
+            });
+          });
+        return toks;
+      }
+      // Returns an array of LINES, each line an array of {w, hl} tokens. titleLine() renders one such line.
       function wrapTitle(t, maxW, size, weight) {
-        const words = t.split(/\s+/),
-          lines = [];
-        let cur = '';
-        words.forEach((w) => {
-          const test = (cur ? cur + ' ' : '') + w;
-          if (tw(test.replace(/\*/g, ''), size, weight) > maxW && cur) {
+        const toks = tokenizeHeadline(t);
+        const lines = [];
+        let cur = [];
+        const lineStr = (arr) => arr.map((tk) => tk.w).join(' ');
+        toks.forEach((tk) => {
+          const test = cur.length ? lineStr(cur) + ' ' + tk.w : tk.w;
+          if (tw(test, size, weight) > maxW && cur.length) {
             lines.push(cur);
-            cur = w;
-          } else cur = test;
+            cur = [tk];
+          } else cur.push(tk);
         });
-        if (cur) lines.push(cur);
-        return lines.length ? lines : [''];
+        if (cur.length) lines.push(cur);
+        return lines.length ? lines : [[]];
       }
       function titleLine(line, x, y, size) {
         const t = el('text', {
@@ -2754,19 +2797,15 @@
           fill: THEME.ink,
         });
         t.setAttribute('xml:space', 'preserve');
-        line
-          .split(/(\*[^*]+\*)/)
-          .filter((s) => s !== '')
-          .forEach((p) => {
-            const hl = /^\*.*\*$/.test(p);
-            const ts = el(
-              'tspan',
-              { fill: hl ? THEME.purple : THEME.ink },
-              hl ? p.slice(1, -1) : p,
-            );
-            ts.setAttribute('xml:space', 'preserve');
-            t.appendChild(ts);
-          });
+        (line || []).forEach((tk, i) => {
+          const ts = el(
+            'tspan',
+            { fill: tk.hl ? THEME.purple : THEME.ink },
+            (i ? ' ' : '') + tk.w,
+          );
+          ts.setAttribute('xml:space', 'preserve');
+          t.appendChild(ts);
+        });
         return t;
       }
 
@@ -4095,23 +4134,33 @@
           const visSet = new Set(groups);
           const cols = [...new Set(groups.map((k) => rowByKey(k).dims[1]))]; // only columns present among VISIBLE groups
           const prim = [...new Set(groups.map((k) => rowByKey(k).dims[0]))];
-          colDefs = cols.map((c) => ({ label: pdim(c), metric: m }));
+          colDefs = cols.map((c) => ({ label: pdim(c) })); // split-value headers (dimensions, not metrics)
           grid = prim.map((pv) => ({
             label: pdim(pv),
             cells: cols.map((cv) => {
               const r = dataRows().find(
                 (r) => r.dims[0] === pv && r.dims[1] === cv,
               );
-              return tableCell(r && visSet.has(r.key) ? r : null, m);
+              return {
+                ...tableCell(r && visSet.has(r.key) ? r : null, m),
+                metric: m,
+              };
             }),
           }));
         } else {
-          colDefs = metrics.map((m) => ({ label: metricLong(m), metric: m }));
+          // metricName() (not metricLong()) so a per-metric rename set in the table header — or anywhere else —
+          // shows here; metricHeader tags the header as renameable via the shared metric inline editor (edM).
+          colDefs = metrics.map((m) => ({
+            label: metricName(m),
+            metricHeader: m.header,
+          }));
           grid = rows.map((r) => ({
             label: disp(r.key),
-            cells: metrics.map((m) => tableCell(r, m)),
+            groupKey: r.key,
+            cells: metrics.map((m) => ({ ...tableCell(r, m), metric: m })),
           }));
         }
+        if (S.tableSwap) ({ colDefs, grid } = transposeTable(colDefs, grid));
         return renderTableGrid(
           svg,
           area,
@@ -4120,69 +4169,100 @@
           metrics[0] || DATA.metrics[0],
         );
       }
+      // True transpose: every cell keeps its own {color,dv,av,metric}, so renderTableGrid's per-metric colour
+      // scale and number format produce an identical grid, just with rows and columns exchanged. Header/row
+      // identity tags (metricHeader / groupKey) travel with their labels so rename stays wired either way.
+      function transposeTable(colDefs, grid) {
+        const newColDefs = grid.map((g) => ({
+          label: g.label,
+          metricHeader: g.metricHeader,
+          groupKey: g.groupKey,
+        }));
+        const newGrid = colDefs.map((c, ci) => ({
+          label: c.label,
+          metricHeader: c.metricHeader,
+          groupKey: c.groupKey,
+          cells: grid.map((g) => g.cells[ci]),
+        }));
+        return { colDefs: newColDefs, grid: newGrid };
+      }
       function renderTableGrid(svg, area, colDefs, grid, m) {
         const labelW = Math.min(
           area.w * 0.34,
           Math.max(
             140,
-            Math.max(...grid.map((g) => tw(g.label, 19, 700))) + 24,
+            Math.max(0, ...grid.map((g) => tw(g.label, 19, 700))) + 24,
           ),
         );
         const gx = area.x + labelW,
           gw = area.w - labelW,
-          colW = gw / colDefs.length,
+          colW = gw / Math.max(1, colDefs.length),
           headH = 54;
-        const rh = Math.min(150, (area.h - headH) / grid.length); // fill available height, any row count
+        const rh = Math.min(150, (area.h - headH) / Math.max(1, grid.length)); // fill available height, any row count
         const oy =
           area.y + Math.max(0, (area.h - (headH + rh * grid.length)) / 2); // vertically centre the block
-        const perColMax = colDefs.map((c, ci) =>
-          Math.max(...grid.map((g) => Math.abs(g.cells[ci].color || 0)), 1e-6),
+        // Colour scale + number format are computed PER METRIC (over every cell of that metric), not per screen
+        // column — so Swap rows/columns is a genuine transpose (same colours/formatting flipped) and each cell
+        // keys off its own metric regardless of orientation.
+        const metricOf = (cl) => (cl && cl.metric) || m;
+        const maxByMetric = {},
+          valsByMetric = {},
+          useDByMetric = {},
+          metricByHeader = {};
+        grid.forEach((g) =>
+          g.cells.forEach((cl) => {
+            if (!cl) return;
+            const mm = metricOf(cl),
+              h = mm.header;
+            metricByHeader[h] = mm;
+            maxByMetric[h] = Math.max(maxByMetric[h] || 0, Math.abs(cl.color || 0));
+            const useD = valueUseDelta(mm);
+            useDByMetric[h] = useD;
+            const dv = useD && cl.dv != null ? cl.dv : cl.av;
+            if (dv != null) (valsByMetric[h] = valsByMetric[h] || []).push(dv);
+          }),
         );
-        // per-column display formatter honours the Values (delta ↔ absolute) toggle; colours never change
-        const colSpec = colDefs.map((c, ci) => {
-          const mm = c.metric || m,
-            useD = valueUseDelta(mm);
-          const vals = grid.map((g) => {
-            const cl = g.cells[ci];
-            return useD && cl.dv != null ? cl.dv : cl.av;
-          });
-          return {
-            useD,
-            spec: useD
-              ? fmtSpec(vals, { pct: true, signed: true })
-              : fmtSpec(vals, { money: mm.unit === '$', pct: mm.unit === '%' }),
-          };
+        const specByMetric = {};
+        Object.keys(valsByMetric).forEach((h) => {
+          const mm = metricByHeader[h] || m;
+          specByMetric[h] = useDByMetric[h]
+            ? fmtSpec(valsByMetric[h], { pct: true, signed: true })
+            : fmtSpec(valsByMetric[h], {
+                money: mm.unit === '$',
+                pct: mm.unit === '%',
+              });
         });
         const DEAD = 10; // ±10% reads as "basically baseline" → almost no colour
         colDefs.forEach((c, ci) => {
           const lbl = c.label;
-          svg.appendChild(
-            T(gx + ci * colW + colW / 2, oy + headH - 20, lbl, {
-              size: Math.min(19, (colW - 12) / Math.max(1, lbl.length * 0.56)),
-              fill: THEME.ink,
-              anchor: 'middle',
-            }),
-          );
+          const node = T(gx + ci * colW + colW / 2, oy + headH - 20, lbl, {
+            size: Math.min(19, (colW - 12) / Math.max(1, lbl.length * 0.56)),
+            fill: THEME.ink,
+            anchor: 'middle',
+          });
+          if (c.metricHeader) edM(node, c.metricHeader); // click a metric header to rename/abbreviate it
+          svg.appendChild(node);
         });
         grid.forEach((g, ri) => {
           const y = oy + headH + ri * rh;
-          svg.appendChild(
-            T(area.x, y + rh / 2, g.label, {
-              size: 19,
-              fill: THEME.ink,
-              baseline: 'central',
-            }),
-          );
+          const rlbl = T(area.x, y + rh / 2, g.label, {
+            size: 19,
+            fill: THEME.ink,
+            baseline: 'central',
+          });
+          if (g.metricHeader) edM(rlbl, g.metricHeader); // transposed: metric names sit in the row labels
+          svg.appendChild(rlbl);
           colDefs.forEach((c, ci) => {
             const cl = g.cells[ci],
-              cv = cl.color,
+              cv = cl ? cl.color : null,
               x = gx + ci * colW;
-            const mm = c.metric || m;
+            const mm = metricOf(cl);
             const isPct = mm.hasDelta;
             const GREEN = '#35C86F',
               RED = '#F0616F',
               GBASE = '#EFEDF2';
             let fill = GBASE;
+            const scale = maxByMetric[mm.header] || 1e-6;
             if (cv != null && cv !== 0) {
               const good = (mm.good || 1) * Math.sign(cv);
               const mag = Math.abs(cv);
@@ -4190,12 +4270,8 @@
                 ? mag <= DEAD
                   ? (mag / DEAD) * 0.12
                   : 0.12 +
-                    0.88 *
-                      Math.min(
-                        1,
-                        (mag - DEAD) / Math.max(1, perColMax[ci] - DEAD),
-                      )
-                : Math.min(1, mag / perColMax[ci]);
+                    0.88 * Math.min(1, (mag - DEAD) / Math.max(1, scale - DEAD))
+                : Math.min(1, mag / scale);
               fill =
                 good > 0
                   ? mix(GBASE, GREEN, Math.pow(t, 0.85))
@@ -4211,10 +4287,12 @@
                 fill,
               }),
             );
-            const dispVal = colSpec[ci].useD && cl.dv != null ? cl.dv : cl.av;
-            if (S.showValues && dispVal != null)
+            const useD = useDByMetric[mm.header];
+            const dispVal = cl ? (useD && cl.dv != null ? cl.dv : cl.av) : null;
+            const spec = specByMetric[mm.header];
+            if (S.showValues && dispVal != null && spec)
               svg.appendChild(
-                T(x + colW / 2, y + rh / 2, colSpec[ci].spec.fmt(dispVal), {
+                T(x + colW / 2, y + rh / 2, spec.fmt(dispVal), {
                   size: 18,
                   fill: relLum(fill) > 0.6 ? THEME.ink : '#fff',
                   anchor: 'middle',
@@ -4280,14 +4358,17 @@
           mx = metrics[0];
           my = metrics[1];
           ms = metrics[2] || null;
-          many = rows.length > 16;
+          // Never fall back to anonymous all-purple dots, however many points there are — the whole point of the
+          // chart is per-group colour + names. Crowding is handled with transparency + white strokes (below),
+          // exactly like the "compare two groups" mode, not by hiding what the user selected.
+          many = false;
           pts = rows
             .map((r) => ({
               xv: axisValOf(r, mx),
               yv: axisValOf(r, my),
               key: r.key,
               label: disp(r.key),
-              color: many ? THEME.purple : groupColor(r.key),
+              color: groupColor(r.key),
               size: ms ? r.metrics[ms.header] : 0,
             }))
             .filter((p) => p.xv != null && p.yv != null);
@@ -4413,17 +4494,41 @@
         // draw ALL circles first…
         pts.forEach((p) => {
           const col = many ? THEME.purple : p.color;
-          svg.appendChild(
-            el('circle', {
-              cx: X(p.xv),
-              cy: Y(p.yv),
-              r: sr(p.size),
-              fill: col,
-              'fill-opacity': many ? 0.4 : 0.9,
-              stroke: '#fff',
-              'stroke-width': many ? 0 : 2,
-            }),
-          );
+          const c = el('circle', {
+            cx: X(p.xv),
+            cy: Y(p.yv),
+            r: sr(p.size),
+            fill: col,
+            'fill-opacity': many ? 0.4 : 0.9,
+            stroke: '#fff',
+            'stroke-width': many ? 0 : 2,
+          });
+          // Clicking a dot shows/hides that point's NAME on the chart — the exact same S.labelHidden control
+          // the value/name badge in "4 · Groups, order & colours" drives, so the two stay in sync in both
+          // directions. A generous transparent hit-halo makes small/overlapping dots easy to click.
+          c.style.cursor = 'pointer';
+          const el_title = document.createElementNS(NS, 'title');
+          el_title.textContent = isLabelHidden(p.key)
+            ? 'Name hidden — click to show'
+            : 'Click to hide this name';
+          c.appendChild(el_title);
+          const onDot = (e) => {
+            e.stopPropagation();
+            toggleLabelHidden(p.key);
+            buildGroupList();
+            render();
+          };
+          c.addEventListener('click', onDot);
+          svg.appendChild(c);
+          const hit = el('circle', {
+            cx: X(p.xv),
+            cy: Y(p.yv),
+            r: Math.max(sr(p.size), 13),
+            fill: 'transparent',
+          });
+          hit.style.cursor = 'pointer';
+          hit.addEventListener('click', onDot);
+          svg.appendChild(hit);
         });
         // …then all names on top, so a name is never hidden behind another bubble
         if (!many)
@@ -4732,6 +4837,7 @@
           labelHidden: {},
           showAvg: false,
           zeroBase: false,
+          tableSwap: false, // Table: false = rows are groups / cols are metrics (or split values); true = transposed
         };
         S.headline = defaultHeadline();
         S.infoText = defaultInfo();
@@ -4985,6 +5091,23 @@
               (b.onclick = () => {
                 S.barColor = b.dataset.c;
                 sync();
+                render();
+              }),
+          );
+        }
+        // Table: swap which axis is rows vs columns (transpose). Header names stay renameable either way.
+        const oldts = document.getElementById('tableSwapWrap');
+        if (oldts) oldts.remove();
+        if (S.type === 'table') {
+          const div = document.createElement('div');
+          div.id = 'tableSwapWrap';
+          div.style.marginTop = '8px';
+          div.innerHTML = `<label class="fld" style="margin-top:0">Layout</label><div class="seg" id="tableSwapSeg"><button data-sw="0" class="${S.tableSwap ? '' : 'on'}">Default</button><button data-sw="1" class="${S.tableSwap ? 'on' : ''}">Swap rows / columns</button></div>`;
+          ml.after(div);
+          div.querySelectorAll('button').forEach(
+            (b) =>
+              (b.onclick = () => {
+                S.tableSwap = b.dataset.sw === '1';
                 render();
               }),
           );
@@ -5845,6 +5968,7 @@
             render();
           }
           updateDataInfo();
+          resetHistory(); // fresh data = fresh undo baseline (can't undo across a data reload)
           if (!opts.silent) autoSaveNow(); // a freshly-created chart exists in the gallery right away, not just after the edit debounce
         } catch (e) {
           err.textContent = '⚠ ' + e.message;
@@ -5933,6 +6057,9 @@
         showControls();
         sync();
         render();
+        // Opening a saved chart / loading a file is a fresh undo baseline. Skip during an undo/redo apply
+        // (_histApplying) and during export project-swaps (_autoSaveSuspended) so neither clobbers the timeline.
+        if (!_histApplying && !_autoSaveSuspended) resetHistory();
       }
       function downloadProjectFile() {
         dl(
@@ -5941,6 +6068,100 @@
           }),
           fileBase() + '.confectchart.json',
         );
+      }
+      /* ---------- UNDO / REDO ----------
+   History is a stack of buildProject() JSON snapshots — the same full, self-contained shape used for file
+   save/load — so undo/redo simply applyProject() an earlier/later snapshot and reuse the entire restore path.
+   Anything that round-trips through a project file (type, metrics, colours, renames, group order, layout, the
+   headline, …) is therefore undoable. Recording is debounced on the same signal as autosave (end of render()),
+   so a burst of edits — dragging a colour, holding a stepper — collapses into ONE history step, and is
+   suppressed while we're programmatically applying a snapshot or swapping projects for export. A data reload
+   (paste + Load, or opening another saved chart) starts a fresh baseline — you can't undo across a data change. */
+      let _undoStack = [],
+        _redoStack = [],
+        _histLast = null,
+        _histTimer = null,
+        _histApplying = false;
+      const _HIST_MAX = 120;
+      // Stable snapshot — deliberately WITHOUT buildProject()'s volatile savedAt timestamp, so two identical
+      // states compare equal (dedup works, and undo's pending-fold doesn't misfire on the timestamp alone).
+      function _histSnap() {
+        if (!DATA || !S) return null;
+        try {
+          return JSON.stringify({
+            rawData: document.getElementById('rawdata').value,
+            customW: document.getElementById('cw').value,
+            customH: document.getElementById('ch').value,
+            state: projectState(),
+          });
+        } catch (e) {
+          return null;
+        }
+      }
+      function resetHistory() {
+        _undoStack = [];
+        _redoStack = [];
+        _histLast = _histSnap();
+      }
+      function recordHistory() {
+        if (_histApplying || _autoSaveSuspended) return;
+        const snap = _histSnap();
+        if (snap == null || snap === _histLast) return;
+        if (_histLast != null) {
+          _undoStack.push(_histLast);
+          if (_undoStack.length > _HIST_MAX) _undoStack.shift();
+        }
+        _histLast = snap;
+        _redoStack = []; // a fresh edit invalidates the redo branch
+      }
+      function scheduleHistory() {
+        if (_histApplying || _autoSaveSuspended) return;
+        clearTimeout(_histTimer);
+        _histTimer = setTimeout(recordHistory, 450);
+      }
+      function _histApply(snap) {
+        clearTimeout(_histTimer);
+        _histApplying = true;
+        try {
+          const o = JSON.parse(snap);
+          // Wrap the stable snapshot back into the shape applyProject() expects (schemaVersion + savedAt).
+          applyProject({
+            schemaVersion: PROJECT_SCHEMA_VERSION,
+            savedAt: new Date().toISOString(),
+            rawData: o.rawData,
+            customW: o.customW,
+            customH: o.customH,
+            state: o.state,
+          });
+        } catch (e) {
+          console.error('Undo/redo failed:', e);
+        } finally {
+          _histApplying = false;
+        }
+      }
+      function undo() {
+        clearTimeout(_histTimer);
+        // fold any not-yet-recorded pending edit into the timeline first, so the first ⌘Z reverts what you
+        // actually last did rather than a stale debounced state
+        const pending = _histSnap();
+        if (pending != null && pending !== _histLast) {
+          if (_histLast != null) _undoStack.push(_histLast);
+          _histLast = pending;
+          _redoStack = [];
+        }
+        if (!_undoStack.length) return;
+        const prev = _undoStack.pop();
+        _redoStack.push(_histLast);
+        _histLast = prev;
+        _histApply(prev);
+      }
+      function redo() {
+        clearTimeout(_histTimer);
+        if (!_redoStack.length) return;
+        const next = _redoStack.pop();
+        _undoStack.push(_histLast);
+        _histLast = next;
+        _histApply(next);
       }
       /* ---------- Loading modal — shown for every Load so parsing/applying a file (which can block the main
    thread for a moment, especially a multi-slide bundle with sizeable embedded data) never reads as a silent
@@ -6403,36 +6624,202 @@
     <div class="galleryIcons"><button class="galleryIconBtn" data-menu title="More" type="button">⋯</button></div>`;
         card.querySelector('[data-select]').addEventListener('click', (e) => {
           e.stopPropagation();
+          if (e.shiftKey) {
+            selectRangeTo(rec.id); // shift-click the tick too extends the range
+            return;
+          }
           toggleCardSelection(rec.id, card);
+          _selectAnchorId = rec.id; // this becomes the anchor for the next shift-click range
         });
         card.addEventListener('click', (e) => {
-          if (e.target.closest('.galleryIcons') || e.target.closest('[data-select]'))
+          if (
+            e.target.closest('.galleryIcons') ||
+            e.target.closest('[data-select]') ||
+            e.target.closest('.galleryNum')
+          )
             return;
+          if (e.shiftKey) {
+            // Shift-click selects the contiguous range from the anchor to here (both inclusive) instead of
+            // opening — matches Feedback 3. Anchor is set by the last plain select/toggle.
+            e.preventDefault();
+            selectRangeTo(rec.id);
+            return;
+          }
           openGalleryItem(rec.id);
         });
-        card.querySelector('[data-menu]').addEventListener('click', (e) => {
-          e.stopPropagation();
+        // Shared menu (⋯ button AND right-click), now including Duplicate — see galleryCardMenuItems/Action.
+        const openMenuFrom = (anchor) =>
           openFloatingMenu(
-            e.currentTarget,
+            anchor,
             'card:' + rec.id,
             card,
-            `<button data-act="open" type="button">Open</button>
+            galleryCardMenuItems(),
+            galleryCardMenuAction(rec),
+          );
+        card.querySelector('[data-menu]').addEventListener('click', (e) => {
+          e.stopPropagation();
+          openMenuFrom(e.currentTarget);
+        });
+        card.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          openMenuFrom(pointRect(e.clientX, e.clientY)); // open at the cursor
+        });
+        // Editable page-number badge — click to type a new position (Feedback 8).
+        const numEl = card.querySelector('.galleryNum');
+        if (numEl) {
+          numEl.title = 'Click to move this slide to another position';
+          numEl.addEventListener('mousedown', (e) => e.stopPropagation());
+          numEl.addEventListener('click', (e) => {
+            e.stopPropagation();
+            beginEditGalleryNum(numEl, rec.id, num, card);
+          });
+        }
+        return card;
+      }
+      // Synthetic "rect" so the shared floating-menu positioner (which reads getBoundingClientRect) can anchor at
+      // an arbitrary point — used for right-click menus opened at the cursor.
+      function pointRect(x, y) {
+        return {
+          getBoundingClientRect: () => ({
+            left: x,
+            right: x,
+            top: y,
+            bottom: y,
+            width: 0,
+            height: 0,
+          }),
+        };
+      }
+      function galleryCardMenuItems() {
+        return `<button data-act="open" type="button">Open</button>
+       <button data-act="duplicate" type="button">Duplicate</button>
        <button data-act="exportJson" type="button">Export JSON</button>
        <button data-act="exportPng" type="button">Export PNG</button>
        <button data-act="exportSvg" type="button">Export SVG</button>
-       <button data-act="delete" class="danger" type="button">Delete</button>`,
-            (act) => {
-              if (act === 'open') openGalleryItem(rec.id);
-              else if (act === 'exportJson') exportGalleryItemJson(rec.id);
-              else if (act === 'exportPng')
-                exportGalleryItemRaster(rec.id, 'png');
-              else if (act === 'exportSvg')
-                exportGalleryItemRaster(rec.id, 'svg');
-              else if (act === 'delete') deleteGalleryItem(rec.id);
-            },
-          );
+       <button data-act="delete" class="danger" type="button">Delete</button>`;
+      }
+      function galleryCardMenuAction(rec) {
+        return (act) => {
+          if (act === 'open') openGalleryItem(rec.id);
+          else if (act === 'duplicate') duplicateGalleryItem(rec.id);
+          else if (act === 'exportJson') exportGalleryItemJson(rec.id);
+          else if (act === 'exportPng') exportGalleryItemRaster(rec.id, 'png');
+          else if (act === 'exportSvg') exportGalleryItemRaster(rec.id, 'svg');
+          else if (act === 'delete') deleteGalleryItem(rec.id);
+        };
+      }
+      // Single-card duplicate that lands immediately to the RIGHT of its source (Feedback 2): the copy takes
+      // order = source.order + 0.5, so it sorts right after the original, and renderGallery()'s self-heal then
+      // renumbers everything to a gap-free 0..N-1 sequence. Mirrors duplicateSelectedGalleryItems()'s copy logic.
+      async function duplicateGalleryItem(id) {
+        try {
+          const rec = await galleryGet(id);
+          if (!rec || !rec.project) return; // blank placeholder — nothing to copy
+          const now = Date.now();
+          const dupProject = JSON.parse(JSON.stringify(rec.project));
+          if (
+            dupProject.state &&
+            typeof dupProject.state.headline === 'string' &&
+            dupProject.state.headline.trim()
+          )
+            dupProject.state.headline = dupProject.state.headline + ' copy';
+          const srcOrder =
+            rec.order != null ? rec.order : await nextGalleryOrder();
+          const dup = {
+            id: newGalleryId(),
+            title: (rec.title || 'Untitled chart') + ' copy',
+            order: srcOrder + 0.5,
+            createdAt: now,
+            updatedAt: now,
+            project: dupProject,
+            thumb: rec.thumb || null,
+          };
+          await galleryPut(dup);
+          await renderGallery();
+        } catch (e) {
+          alert('Duplicate failed: ' + e.message);
+          console.error(e);
+        }
+      }
+      // Range-select from the anchor (last plain-selected card) to `id`, both inclusive, in the CURRENT display
+      // order. Feedback 3. Adds to whatever is already selected so multiple ranges compose.
+      let _selectAnchorId = null;
+      function selectRangeTo(id) {
+        const strip = document.getElementById('galleryStrip');
+        if (!strip) return;
+        const ids = [...strip.querySelectorAll('.galleryCard')].map(
+          (x) => x.dataset.id,
+        );
+        const to = ids.indexOf(id);
+        if (to < 0) return;
+        let from = _selectAnchorId ? ids.indexOf(_selectAnchorId) : -1;
+        if (from < 0) from = to; // no valid anchor yet → behaves like selecting just this card
+        const [a, b] = from <= to ? [from, to] : [to, from];
+        for (let i = a; i <= b; i++) gallerySelectedIds.add(ids[i]);
+        if (!_selectAnchorId) _selectAnchorId = id;
+        renderGallery();
+      }
+      // Move a card (or, if it's part of a multi-selection, the whole selected group) to 1-based position pos1,
+      // preserving the group's relative order. Feedback 8.
+      async function moveGalleryTo(id, pos1) {
+        try {
+          const items = await galleryGetAll();
+          const ids = items.map((r) => r.id);
+          const group =
+            gallerySelectedIds.has(id) && gallerySelectedIds.size > 1;
+          const moving = group
+            ? ids.filter((x) => gallerySelectedIds.has(x))
+            : [id];
+          const rest = ids.filter((x) => !moving.includes(x));
+          const idx = Math.max(0, Math.min(rest.length, (pos1 | 0) - 1));
+          const finalIds = [
+            ...rest.slice(0, idx),
+            ...moving,
+            ...rest.slice(idx),
+          ];
+          await persistGalleryOrder(finalIds);
+          renderGallery();
+        } catch (e) {
+          console.error('Move failed:', e);
+          renderGallery();
+        }
+      }
+      function beginEditGalleryNum(numEl, id, curNum, card) {
+        if (numEl.querySelector('input')) return; // already editing
+        const prevDraggable = card.draggable;
+        card.draggable = false; // stop the badge input from starting a card drag
+        const inp = document.createElement('input');
+        inp.type = 'number';
+        inp.min = '1';
+        inp.value = curNum;
+        inp.className = 'galleryNumInput';
+        numEl.textContent = '';
+        numEl.appendChild(inp);
+        inp.focus();
+        inp.select();
+        let done = false;
+        const finish = (apply) => {
+          if (done) return;
+          done = true;
+          card.draggable = prevDraggable;
+          const v = parseInt(inp.value, 10);
+          if (apply && !isNaN(v) && v !== curNum) moveGalleryTo(id, v);
+          else renderGallery();
+        };
+        inp.addEventListener('mousedown', (e) => e.stopPropagation());
+        inp.addEventListener('click', (e) => e.stopPropagation());
+        inp.addEventListener('keydown', (e) => {
+          e.stopPropagation();
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            finish(true);
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            finish(false);
+          }
         });
-        return card;
+        inp.addEventListener('blur', () => finish(true));
       }
       // Renders each selected chart to a PNG (same rasterize() pipeline as the per-card "Export PNG", just
       // captured as bytes instead of downloaded individually) and bundles them into one zip.
@@ -6751,10 +7138,30 @@
             strip
               .querySelectorAll('.galleryCard')
               .forEach((x) => x.classList.remove('over'));
-            const ids = [...strip.querySelectorAll('.galleryCard')].map(
+            const domIds = [...strip.querySelectorAll('.galleryCard')].map(
               (x) => x.dataset.id,
             );
-            await persistGalleryOrder(ids);
+            const dragId = card.dataset.id;
+            let finalIds = domIds;
+            // Group drag (Feedback 3): if the dragged card is part of a multi-selection, move ALL selected cards
+            // together to where the drag card landed, keeping their relative order. dragover only moved the
+            // single card; here we splice the whole group in at that landing spot (counted among non-selected).
+            if (gallerySelectedIds.has(dragId) && gallerySelectedIds.size > 1) {
+              const groupIds = domIds.filter((id) =>
+                gallerySelectedIds.has(id),
+              );
+              const rest = domIds.filter((id) => !gallerySelectedIds.has(id));
+              const dragPos = domIds.indexOf(dragId);
+              const insertAt = domIds
+                .slice(0, dragPos)
+                .filter((id) => !gallerySelectedIds.has(id)).length;
+              finalIds = [
+                ...rest.slice(0, insertAt),
+                ...groupIds,
+                ...rest.slice(insertAt),
+              ];
+            }
+            await persistGalleryOrder(finalIds);
             renderGallery();
           });
           card.addEventListener('dragover', (e) => {
@@ -7134,6 +7541,22 @@
             closeAllGalleryMenus();
             closeColorPicker();
           }
+        });
+        // Undo / redo — ⌘Z / Ctrl+Z, and ⇧⌘Z or ⌘Y / Ctrl+Y to redo. Ignored while a text field is focused so
+        // the browser's own text-editing undo keeps working inside the data box, inline editors and rename fields.
+        document.addEventListener('keydown', (e) => {
+          if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+          const k = e.key.toLowerCase();
+          if (k !== 'z' && k !== 'y') return;
+          const t = e.target;
+          const typing =
+            t &&
+            (t.isContentEditable ||
+              /^(input|textarea|select)$/i.test(t.tagName || ''));
+          if (typing) return;
+          e.preventDefault();
+          if (k === 'y' || (k === 'z' && e.shiftKey)) redo();
+          else undo();
         });
         $('galleryCardMenu').addEventListener('click', galleryCardMenuClick);
         window.addEventListener('resize', () => {
