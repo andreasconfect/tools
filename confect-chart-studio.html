@@ -134,6 +134,15 @@
       .stage svg {
         display: block;
       }
+      /* Data tiles — draggable stat cards, see wireTileDrag()/onTileDragMove()/onTileDragEnd() */
+      .stage svg .statTile {
+        cursor: move;
+        touch-action: none; /* let pointer events drive dragging instead of the browser's own scroll/zoom gestures */
+        user-select: none;
+      }
+      .stage svg .statTile.dragging {
+        cursor: grabbing;
+      }
       /* on-canvas editing */
       .stage svg .ed {
         cursor: text;
@@ -2611,6 +2620,19 @@
         node.setAttribute('data-mh', header);
         return node;
       }
+      // Any on-canvas label that identifies a GROUP or a raw dimension split-value — table row/column headers,
+      // legend entries, donut segment labels, line end-labels — double-click to edit, not single-click like
+      // most other canvas text, since these often sit close together (a legend, a table). Reuses the exact same
+      // floatEditor/openEditor/commitEditor plumbing as everything else, via its own data-edit-dbl trigger — see
+      // the dblclick listener on #stage. Renamed text lands in S.rename, the SAME map the Groups panel already
+      // writes to, so editing a label here and renaming that same group/value elsewhere stay in sync — and the
+      // SAME override shows up everywhere else that group/value's name is displayed, automatically.
+      function edH(node, key) {
+        node.setAttribute('class', 'ed');
+        node.setAttribute('data-edit-dbl', 'renameLabel');
+        node.setAttribute('data-hk', key);
+        return node;
+      }
       function render() {
         const stage = document.getElementById('stage');
         stage.innerHTML = '';
@@ -3132,7 +3154,11 @@
             svg,
             plot.x,
             area.y + 18,
-            catVals.map((c, i) => ({ label: pdim(c), color: seriesColor(i) })),
+            catVals.map((c, i) => ({
+              label: disp(c),
+              color: seriesColor(i),
+              key: c,
+            })),
           );
       }
 
@@ -3294,9 +3320,10 @@
             ? [...new Set(groups.map((k) => rowByKey(k).dims[0]))]
             : [...new Set(DATA.rows.map((r) => r.dims[0]))];
           series = splits.map((sv, i) => ({
-            label: pdim(sv),
+            label: disp(sv),
             color: seriesColor(i),
             metric: m,
+            key: sv,
             pts: cats.map((pv) => {
               const rr2 = DATA.rows.find(
                 (r) => r.dims[0] === pv && r.dims[1] === sv,
@@ -3310,9 +3337,10 @@
           cats = groups.map((k) => rowByKey(k).dims[0]);
           catKeys = groups;
           series = metrics.map((m, i) => ({
-            label: m.label,
+            label: metricName(m),
             color: seriesColor(i),
             metric: m,
+            metricHeader: m.header,
             pts: groups.map((k) => ({ v: axisValOf(rowByKey(k), m) })),
           }));
         }
@@ -3529,15 +3557,18 @@
                   ).slice(0, 2),
                   lh = 20 * 1.12,
                   y0 = ey - ((lines.length - 1) * lh) / 2;
-                lines.forEach((ln, li) =>
-                  svg.appendChild(
-                    T(ex, y0 + li * lh, ln, {
-                      size: 20,
-                      fill: s.color,
-                      baseline: 'central',
-                    }),
-                  ),
-                );
+                lines.forEach((ln, li) => {
+                  const node = T(ex, y0 + li * lh, ln, {
+                    size: 20,
+                    fill: s.color,
+                    baseline: 'central',
+                  });
+                  // end-label doubles as this series' legend — same editability as a real legend entry, split
+                  // across however many wrapped lines, all tagged with the same key so any of them opens it
+                  if (s.metricHeader) edM(node, s.metricHeader);
+                  else if (s.key != null) edH(node, s.key);
+                  svg.appendChild(node);
+                });
                 break;
               }
         });
@@ -3557,8 +3588,9 @@
         // valueFn returns {v:absolute (for bar height/axis), d:delta (for the printed label, or null)}
         if (metrics.length > 1) {
           series = metrics.map((m, i) => ({
-            label: m.label,
+            label: metricName(m),
             color: seriesColor(i),
+            metricHeader: m.header,
           }));
           cats = groups.map(rowByKey);
           catLabel = (c) => c.dims[0];
@@ -3571,21 +3603,44 @@
           };
         } else if (twoDim) {
           const m = metrics[0];
-          const visSet = new Set(groups);
-          const splits = [...new Set(groups.map((k) => rowByKey(k).dims[1]))]; // only splits present among VISIBLE groups
+          // "Swap grouping" (S.groupSwap) transposes which physical dim drives the X-axis clusters vs. the
+          // coloured/legend series — priIdx/secIdx just pick which dims[] slot plays which role; everything
+          // below (cats/series construction, valueFn) is unchanged either way. Renames (S.rename, keyed by the
+          // raw dim value) and hidden groups (S.hidden, keyed by full row key) already read/write by VALUE, not
+          // by axis role, so they carry over to the new role automatically with no extra code.
+          const priIdx = S.groupSwap ? 1 : 0,
+            secIdx = S.groupSwap ? 0 : 1;
+          // the synthetic baseline row only has a meaningful position at physical dims[0] (see initState()); when
+          // swapped it wouldn't land anywhere sensible, so drop it here rather than showing a blank category
+          const gset = S.groupSwap ? groups.filter((k) => !isBaseline(k)) : groups;
+          const visSet = new Set(gset);
+          const splits = [
+            ...new Set(gset.map((k) => rowByKey(k).dims[secIdx])),
+          ]; // only splits present among VISIBLE groups
           series = splits.map((v, i) => ({
-            label: pdim(v),
+            label: disp(v),
             color: seriesColor(i),
+            key: v,
           }));
-          const prim = [...new Set(groups.map((k) => rowByKey(k).dims[0]))];
+          const prim = [...new Set(gset.map((k) => rowByKey(k).dims[priIdx]))];
+          // key: pv (a raw dim value, not a full row key — same shape edH()/drawLegend() already key S.rename by
+          // for split values) so the X-axis cluster label picks up disp()'s rename lookup below, and so a per-
+          // group "hide value label" toggle (isLabelHidden) applies here too — neither did before, since these
+          // synthetic multi-row categories never carried any key at all.
           cats = prim.map((pv) =>
             isBaseline(pv)
-              ? { dims: [pv], _baseline: true, _row: rowByKey(BASELINE_KEY) }
+              ? {
+                  dims: [pv],
+                  key: pv,
+                  _baseline: true,
+                  _row: rowByKey(BASELINE_KEY),
+                }
               : {
                   dims: [pv],
+                  key: pv,
                   _sub: splits.map((sv) => {
                     const r = DATA.rows.find(
-                      (r) => r.dims[0] === pv && r.dims[1] === sv,
+                      (r) => r.dims[priIdx] === pv && r.dims[secIdx] === sv,
                     );
                     return r && visSet.has(r.key) ? r : null;
                   }),
@@ -4088,14 +4143,17 @@
               const lx = cxc + lr * Math.cos(mid),
                 ly = cy + lr * Math.sin(mid);
               svg.appendChild(
-                T(lx, ly - 8, p.label, {
-                  size: 18,
-                  fill: '#fff',
-                  stroke: p.color,
-                  strokeW: 4,
-                  anchor: 'middle',
-                  baseline: 'central',
-                }),
+                edH(
+                  T(lx, ly - 8, p.label, {
+                    size: 18,
+                    fill: '#fff',
+                    stroke: p.color,
+                    strokeW: 4,
+                    anchor: 'middle',
+                    baseline: 'central',
+                  }),
+                  p.key,
+                ), // this is the donut's legend — each slice's own name, double-click to rename
               );
               svg.appendChild(
                 T(lx, ly + 14, Math.round((p.val / total) * 100) + '%', {
@@ -4134,9 +4192,13 @@
           const visSet = new Set(groups);
           const cols = [...new Set(groups.map((k) => rowByKey(k).dims[1]))]; // only columns present among VISIBLE groups
           const prim = [...new Set(groups.map((k) => rowByKey(k).dims[0]))];
-          colDefs = cols.map((c) => ({ label: pdim(c) })); // split-value headers (dimensions, not metrics)
+          // disp() (not pdim()) so a header rename set here — or via the Groups panel, which uses the same
+          // S.rename map — shows up either way; dimVal tags the header as double-click-renameable (see
+          // renderTableGrid()'s data-hk wiring) since these are raw split-values, not group keys or metric names.
+          colDefs = cols.map((c) => ({ label: disp(c), dimVal: c })); // split-value headers (dimensions, not metrics)
           grid = prim.map((pv) => ({
-            label: pdim(pv),
+            label: disp(pv),
+            dimVal: pv,
             cells: cols.map((cv) => {
               const r = dataRows().find(
                 (r) => r.dims[0] === pv && r.dims[1] === cv,
@@ -4171,17 +4233,19 @@
       }
       // True transpose: every cell keeps its own {color,dv,av,metric}, so renderTableGrid's per-metric colour
       // scale and number format produce an identical grid, just with rows and columns exchanged. Header/row
-      // identity tags (metricHeader / groupKey) travel with their labels so rename stays wired either way.
+      // identity tags (metricHeader / groupKey / dimVal) travel with their labels so rename stays wired either way.
       function transposeTable(colDefs, grid) {
         const newColDefs = grid.map((g) => ({
           label: g.label,
           metricHeader: g.metricHeader,
           groupKey: g.groupKey,
+          dimVal: g.dimVal,
         }));
         const newGrid = colDefs.map((c, ci) => ({
           label: c.label,
           metricHeader: c.metricHeader,
           groupKey: c.groupKey,
+          dimVal: c.dimVal,
           cells: grid.map((g) => g.cells[ci]),
         }));
         return { colDefs: newColDefs, grid: newGrid };
@@ -4241,6 +4305,8 @@
             anchor: 'middle',
           });
           if (c.metricHeader) edM(node, c.metricHeader); // click a metric header to rename/abbreviate it
+          else if (c.dimVal != null || c.groupKey != null)
+            edH(node, c.dimVal != null ? c.dimVal : c.groupKey); // double-click a group/dimension header to rename it
           svg.appendChild(node);
         });
         grid.forEach((g, ri) => {
@@ -4251,6 +4317,8 @@
             baseline: 'central',
           });
           if (g.metricHeader) edM(rlbl, g.metricHeader); // transposed: metric names sit in the row labels
+          else if (g.dimVal != null || g.groupKey != null)
+            edH(rlbl, g.dimVal != null ? g.dimVal : g.groupKey);
           svg.appendChild(rlbl);
           colDefs.forEach((c, ci) => {
             const cl = g.cells[ci],
@@ -4596,12 +4664,21 @@
         let ch = Math.min((area.h - gy * (rws - 1)) / rws, cw * 0.72); // landscape cards
         const gridH = ch * rws + gy * (rws - 1),
           oy0 = area.y + Math.max(0, (area.h - gridH) / 2); // vertically centred block
+        // grid slot (top-left corner) for a given tile INDEX — shared by initial placement and the drag code
+        // below, so "where does tile i belong" only has one definition.
+        const cellOf = (i) => ({
+          x: area.x + (i % cols) * (cw + gx),
+          y: oy0 + Math.floor(i / cols) * (ch + gy),
+        });
         tiles.forEach((t, i) => {
-          const ci = i % cols,
-            ri = Math.floor(i / cols),
-            x = area.x + ci * (cw + gx),
-            y = oy0 + ri * (ch + gy);
-          svg.appendChild(
+          const { x, y } = cellOf(i);
+          const g = el('g', {
+            class: 'statTile',
+            'data-key': t.key,
+            'data-base-x': x,
+            'data-base-y': y,
+          });
+          g.appendChild(
             el('rect', {
               x,
               y,
@@ -4614,7 +4691,7 @@
               filter: 'url(#cardshadow)',
             }),
           );
-          svg.appendChild(
+          g.appendChild(
             T(x + cw / 2, y + ch * 0.45, tileValue(t), {
               size: Math.min(cw * 0.23, ch * 0.44),
               weight: 700,
@@ -4623,7 +4700,7 @@
               baseline: 'central',
             }),
           );
-          svg.appendChild(
+          g.appendChild(
             T(x + cw / 2, y + ch * 0.74, t.label.toUpperCase(), {
               size: Math.min(cw * 0.066, 18),
               fill: '#8C8895',
@@ -4632,9 +4709,155 @@
               ls: '0.06em',
             }),
           );
+          svg.appendChild(g);
+          wireTileDrag(svg, g, t.key, { cols, rws, cellOf, area, oy0, cw, ch, gx, gy });
+        });
+      }
+      /* ---------- Data tiles drag-and-drop reordering ----------
+   Tiles are SVG <g> elements, not native HTML, so this can't reuse HTML5 drag-and-drop the way the gallery
+   does — it's pointer events + manual grid hit-testing instead. The "make space" shifting animation is the
+   SAME technique as the gallery's flipMove() (position instantly at the OLD spot with transitions off, force a
+   reflow, then transition to the NEW spot), just extended to two dimensions (both x and y, since this is a
+   multi-row/column grid, not one strip) and expressed as the SVG `transform` attribute — modern browsers treat
+   that as the same animatable property as CSS transform, so toggling style.transition still animates it. */
+      let _tileDrag = null;
+      function svgSpacePoint(svg, clientX, clientY) {
+        const pt = svg.createSVGPoint();
+        pt.x = clientX;
+        pt.y = clientY;
+        const m = svg.getScreenCTM();
+        if (!m) return { x: clientX, y: clientY };
+        const p = pt.matrixTransform(m.inverse());
+        return { x: p.x, y: p.y };
+      }
+      function tileGroupByKey(svg, key) {
+        return svg.querySelector(
+          `.statTile[data-key="${(key + '').replace(/"/g, '\\"')}"]`,
+        );
+      }
+      function setTileTransform(g, dx, dy, animate) {
+        g.style.transition = animate ? 'transform .18s ease' : 'none';
+        g.setAttribute('transform', dx || dy ? `translate(${dx},${dy})` : '');
+      }
+      function wireTileDrag(svg, group, key, layout) {
+        group.style.cursor = 'move';
+        group.addEventListener('pointerdown', (e) => {
+          if (e.button != null && e.button !== 0) return;
+          e.preventDefault();
+          group.setPointerCapture(e.pointerId);
+          const p0 = svgSpacePoint(svg, e.clientX, e.clientY);
+          const baseX = +group.dataset.baseX,
+            baseY = +group.dataset.baseY;
+          _tileDrag = {
+            svg,
+            pointerId: e.pointerId,
+            key,
+            order: S.tiles.filter((t) => !t.hidden).map((t) => t.key), // working copy, mutated live while dragging
+            grabDX: p0.x - baseX,
+            grabDY: p0.y - baseY,
+            layout,
+          };
+          svg
+            .querySelectorAll('.statTile')
+            .forEach((g) => (g.style.transition = 'none'));
+          group.classList.add('dragging');
+        });
+        group.addEventListener('pointermove', (e) =>
+          onTileDragMove(e, group, key),
+        );
+        group.addEventListener('pointerup', (e) => onTileDragEnd(e, group));
+        group.addEventListener('pointercancel', (e) => onTileDragEnd(e, group));
+      }
+      function onTileDragMove(e, group, key) {
+        const d = _tileDrag;
+        if (!d || d.pointerId !== e.pointerId || d.key !== key) return;
+        const { cols, rws, cellOf, area, oy0, cw, ch, gx, gy } = d.layout;
+        const p = svgSpacePoint(d.svg, e.clientX, e.clientY);
+        const nx = p.x - d.grabDX,
+          ny = p.y - d.grabDY;
+        const baseX = +group.dataset.baseX,
+          baseY = +group.dataset.baseY;
+        setTileTransform(group, nx - baseX, ny - baseY, false); // dragged tile follows the pointer directly, no lag
+        // which grid cell does the tile's centre currently sit nearest to?
+        let col = Math.round((nx - area.x) / (cw + gx));
+        let row = Math.round((ny - oy0) / (ch + gy));
+        col = Math.max(0, Math.min(cols - 1, col));
+        row = Math.max(0, Math.min(rws - 1, row));
+        const hoverIdx = Math.max(
+          0,
+          Math.min(d.order.length - 1, row * cols + col),
+        );
+        const curIdx = d.order.indexOf(key);
+        if (hoverIdx === curIdx) return;
+        const oldOrder = d.order.slice();
+        d.order.splice(curIdx, 1);
+        d.order.splice(hoverIdx, 0, key);
+        // "make space": FLIP-animate every OTHER tile whose index actually changed to its new slot; the dragged
+        // tile itself is left alone here — it's already following the pointer above.
+        d.order.forEach((k, idx) => {
+          if (k === key) return;
+          const oldIdx = oldOrder.indexOf(k);
+          if (oldIdx === idx) return;
+          const g = tileGroupByKey(d.svg, k);
+          if (!g) return;
+          const gBaseX = +g.dataset.baseX,
+            gBaseY = +g.dataset.baseY;
+          const from = cellOf(oldIdx),
+            to = cellOf(idx);
+          setTileTransform(g, from.x - gBaseX, from.y - gBaseY, false);
+          requestAnimationFrame(() =>
+            requestAnimationFrame(() =>
+              setTileTransform(g, to.x - gBaseX, to.y - gBaseY, true),
+            ),
+          );
+        });
+      }
+      function onTileDragEnd(e, group) {
+        const d = _tileDrag;
+        if (!d || d.pointerId !== e.pointerId) return;
+        _tileDrag = null;
+        group.classList.remove('dragging');
+        // Absolute SVG-space position the dragged tile is VISUALLY at right now (mid-drag, under the cursor).
+        // The SVG's own coordinate system (area/viewBox) is unchanged by the render() call below, so this stays
+        // meaningful even though the tile gets a brand-new DOM node afterward, at a different (settled) base —
+        // an offset relative to the OLD node's base would be wrong the moment the tile actually changed slots.
+        const oldBaseX = +group.dataset.baseX,
+          oldBaseY = +group.dataset.baseY;
+        const tf = group.getAttribute('transform');
+        const m = tf && /translate\(([-\d.]+),([-\d.]+)\)/.exec(tf);
+        const lastAbsX = oldBaseX + (m ? +m[1] : 0),
+          lastAbsY = oldBaseY + (m ? +m[2] : 0);
+        const dragKey = group.dataset.key;
+        // commit the new order into S.tiles: reordered VISIBLE tiles first (matching the drag), any hidden
+        // tiles kept in their prior relative order after — hidden tiles never participate in the grid/drag.
+        const byKey = new Map(S.tiles.map((t) => [t.key, t]));
+        const reorderedVisible = d.order
+          .map((k) => byKey.get(k))
+          .filter(Boolean);
+        const stillHidden = S.tiles.filter((t) => t.hidden);
+        S.tiles = [...reorderedVisible, ...stillHidden];
+        S.tileOrder = S.tiles.map((t) => t.key);
+        render(); // full clean redraw with tiles in their committed order
+        // FLIP the dropped tile from where the drag left it into its freshly-rendered settled slot.
+        requestAnimationFrame(() => {
+          const stage = document.getElementById('stage');
+          const newSvg = stage && stage.querySelector('svg');
+          const newG = newSvg && tileGroupByKey(newSvg, dragKey);
+          if (!newG) return;
+          const newBaseX = +newG.dataset.baseX,
+            newBaseY = +newG.dataset.baseY;
+          setTileTransform(newG, lastAbsX - newBaseX, lastAbsY - newBaseY, false);
+          requestAnimationFrame(() =>
+            requestAnimationFrame(() => setTileTransform(newG, 0, 0, true)),
+          );
         });
       }
 
+      // Shared legend renderer for every chart type that has one (grouped bar's byCat legend, drawBar's byCat
+      // legend). Each series entry may carry a `key` (a group key or raw dimension split-value — renameable via
+      // edH()/S.rename, same map the Groups panel and table headers use) or a `metricHeader` (renameable via the
+      // existing single-click edM()/S.metricRename, same as axis titles and table metric columns) — whichever
+      // is set decides how (or whether) that legend label is editable, in ONE place for every caller.
       function drawLegend(svg, x, y, series) {
         let cx = x;
         series.forEach((s) => {
@@ -4648,9 +4871,10 @@
               fill: s.color,
             }),
           );
-          svg.appendChild(
-            T(cx + 25, y, s.label, { size: 17, baseline: 'central' }),
-          );
+          const node = T(cx + 25, y, s.label, { size: 17, baseline: 'central' });
+          if (s.metricHeader) edM(node, s.metricHeader);
+          else if (s.key != null) edH(node, s.key);
+          svg.appendChild(node);
           cx += 25 + tw(s.label, 17, 400) + 26;
         });
       }
@@ -4827,6 +5051,7 @@
           refLabel: '',
           bg: 'transparent',
           tiles: [],
+          tileOrder: null, // Data tiles drag-reorder — array of tile .key values in the user's chosen order; see applyTileOrder()
           secondary: 'pink',
           detail: 2,
           fileType: 'png',
@@ -4838,10 +5063,30 @@
           showAvg: false,
           zeroBase: false,
           tableSwap: false, // Table: false = rows are groups / cols are metrics (or split values); true = transposed
+          groupSwap: false, // Grouped bar: false = dims[0] is X-axis clusters / dims[1] is coloured series; true = swapped
         };
         S.headline = defaultHeadline();
         S.infoText = defaultInfo();
         S.tiles = buildTiles();
+        applyTileOrder();
+      }
+      // Reorders S.tiles to match S.tileOrder (an array of tile .key values), when one is set — tiles whose key
+      // isn't mentioned (new to this data, or a save from before tileOrder existed) are appended at the end in
+      // their natural buildTiles() order, so nothing silently disappears. Called after every buildTiles() — see
+      // initState() (fresh chart) and applyProject() (loaded project, once its saved tileOrder is merged in).
+      function applyTileOrder() {
+        if (!S.tileOrder || !S.tileOrder.length || !S.tiles || !S.tiles.length)
+          return;
+        const byKey = new Map(S.tiles.map((t) => [t.key, t]));
+        const ordered = [];
+        S.tileOrder.forEach((k) => {
+          if (byKey.has(k)) {
+            ordered.push(byKey.get(k));
+            byKey.delete(k);
+          }
+        });
+        byKey.forEach((t) => ordered.push(t));
+        S.tiles = ordered;
       }
       function onType() {
         const all = DATA.metrics,
@@ -5055,6 +5300,7 @@
         if (S.headlineAuto) S.headline = defaultHeadline();
         buildMetricChips();
         buildGroupList();
+        mapHint(); // the "Swap grouping" control's visibility depends on selMetrics().length — keep it in sync
         render();
       }
       function mapHint() {
@@ -5091,6 +5337,28 @@
               (b.onclick = () => {
                 S.barColor = b.dataset.c;
                 sync();
+                render();
+              }),
+          );
+        }
+        // Grouped bar: swap which dim drives the X-axis clusters vs. the coloured/legend series (transpose).
+        // Only meaningful in the twoDim, single-metric branch of drawGrouped() — same gating it uses itself.
+        const oldgs = document.getElementById('groupSwapWrap');
+        if (oldgs) oldgs.remove();
+        if (
+          S.type === 'grouped' &&
+          DATA.dims.length > 1 &&
+          selMetrics().length <= 1
+        ) {
+          const div = document.createElement('div');
+          div.id = 'groupSwapWrap';
+          div.style.marginTop = '8px';
+          div.innerHTML = `<label class="fld" style="margin-top:0">Grouping</label><div class="seg" id="groupSwapSeg"><button data-sw="0" class="${S.groupSwap ? '' : 'on'}">Default</button><button data-sw="1" class="${S.groupSwap ? 'on' : ''}">Swap grouping</button></div>`;
+          ml.after(div);
+          div.querySelectorAll('button').forEach(
+            (b) =>
+              (b.onclick = () => {
+                S.groupSwap = b.dataset.sw === '1';
                 render();
               }),
           );
@@ -5532,6 +5800,10 @@
           const h = node.getAttribute('data-mh');
           inp.dataset.mh = h;
           val = metricName(DATA.metrics.find((m) => m.header === h));
+        } else if (field === 'renameLabel') {
+          const k = node.getAttribute('data-hk');
+          inp.dataset.hk = k;
+          val = disp(k);
         }
         inp.value = val || '';
         inp.dataset.field = field;
@@ -5560,6 +5832,12 @@
           if (v.trim() === '' || v === metricAxisTitle(m))
             delete S.metricRename[h];
           else S.metricRename[h] = v;
+        } else if (f === 'renameLabel') {
+          const k = inp.dataset.hk;
+          // same "reverts to the auto value -> just drop the override" rule the Groups panel's own rename
+          // input already uses for this exact map — keeps S.rename from accumulating no-op entries either way.
+          if (v.trim() === '' || v === pretty(k)) delete S.rename[k];
+          else S.rename[k] = v;
         }
         inp.style.display = 'none';
         render();
@@ -6033,6 +6311,7 @@
           hidden: new Set(st.hidden || []),
           tiles: S.tiles,
         });
+        applyTileOrder(); // S.tileOrder just came in from the loaded project; S.tiles was still initState()'s natural order
         // Migration for projects saved before headlineAuto existed: such a save has no opinion on whether its
         // headline was auto-generated or hand-edited, and initState()'s true default would wrongly let it start
         // auto-overwriting a headline someone actually customized. Infer it instead — recompute what
@@ -7601,6 +7880,14 @@
           const t = e.target.closest('[data-edit]');
           if (t) {
             openEditor(t.getAttribute('data-edit'), t);
+          }
+        });
+        // double-click-to-edit for table row/column headers specifically (see edH()) — same editor, different
+        // trigger, since a table packs many headers close together and single-click felt too easy to trigger.
+        $('stage').addEventListener('dblclick', (e) => {
+          const t = e.target.closest('[data-edit-dbl]');
+          if (t) {
+            openEditor(t.getAttribute('data-edit-dbl'), t);
           }
         });
         const inp = $('floatEditor');
