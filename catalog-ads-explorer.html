@@ -324,8 +324,8 @@ function userWhere(except){ const cl=[GLOBAL];
     const ors='('+sel.map(v=>valClause(col,v)).join(' OR ')+')';
     cl.push(f.mode==='exclude'?`NOT ${ors}`:ors); } return cl; }
 /* ---- custom (session) dimensions & metrics ---- */
-function loadCustom(){ try{CDIMS=JSON.parse(sessionStorage.getItem('cae_cdims')||'[]');}catch(e){CDIMS=[];} try{CMETS=JSON.parse(sessionStorage.getItem('cae_cmets')||'[]');}catch(e){CMETS=[];} }
-function saveCustom(){ try{sessionStorage.setItem('cae_cdims',JSON.stringify(CDIMS));sessionStorage.setItem('cae_cmets',JSON.stringify(CMETS));}catch(e){} }
+function loadCustom(){ try{CDIMS=JSON.parse(localStorage.getItem('cae_cdims')||'[]');}catch(e){CDIMS=[];} try{CMETS=JSON.parse(localStorage.getItem('cae_cmets')||'[]');}catch(e){CMETS=[];} }
+function saveCustom(){ try{localStorage.setItem('cae_cdims',JSON.stringify(CDIMS));localStorage.setItem('cae_cmets',JSON.stringify(CMETS));}catch(e){} }
 function likeTok(s){ return String(s).toLowerCase().replace(/'/g,"''").replace(/[\\%_]/g,c=>'\\'+c); }
 function condSQL(c){ const toks=(c.text||'').split(',').map(s=>s.trim()).filter(Boolean); if(!toks.length||!c.col)return null;
   return '('+toks.map(t=>`lower(COALESCE("${c.col}",'')) LIKE '%${likeTok(t)}%' ESCAPE '\\'`).join(' OR ')+')'; }
@@ -710,6 +710,7 @@ function copySheets(){
 }
 /* ---- custom fields builder (session) ---- */
 const DVALS={};
+let editDimKey=null, editMetId=null;
 async function fetchDistinct(col){ if(DVALS[col])return DVALS[col]; const m=DMAP[col]||{};
   try{ const q=m.multi?`SELECT DISTINCT trim(t) v FROM (SELECT unnest(string_split(${col}, ',')) t FROM fact) WHERE trim(t)<>'' ORDER BY 1`:`SELECT DISTINCT ${col} v FROM fact WHERE ${col} IS NOT NULL AND ${col}<>'' ORDER BY 1 LIMIT 500`;
     DVALS[col]=(await conn.query(q)).toArray().map(r=>String(r.v)); }catch(e){DVALS[col]=[];}
@@ -720,43 +721,59 @@ function baseColOptions(sel){ return ['Ad','Advertiser','Design','Product set','
     return `<optgroup label="${g}">`+items.map(d=>`<option value="${d[0]}"${d[0]===sel?' selected':''}>${esc(d[1])}</option>`).join('')+`</optgroup>`; }).join(''); }
 function condRowHTML(c){ c=c||{col:'theme',text:''}; return `<div class="crow cond"><select class="c-col">${baseColOptions(c.col)}</select> contains <input type="text" class="c-text" list="dl_${c.col}" placeholder="holiday, sale  (comma = OR)" value="${escA(c.text||'')}" style="min-width:220px"><span class="cx c-condx" title="remove">✕</span></div>`; }
 function ruleBlockHTML(r){ r=r||{label:'',conn:'any',conds:[{col:'theme',text:''}]}; return `<div class="cbox rule"><div class="crow">Label <input type="text" class="r-label" value="${escA(r.label||'')}" placeholder="e.g. Black Friday" style="min-width:160px"> · match <select class="r-conn"><option value="any"${r.conn!=='all'?' selected':''}>ANY condition</option><option value="all"${r.conn==='all'?' selected':''}>ALL conditions</option></select> <span class="cx r-rulex" title="remove rule">✕ rule</span></div><div class="r-conds">${(r.conds||[{col:'theme',text:''}]).map(condRowHTML).join('')}</div><button class="cbtn r-addcond" type="button">＋ condition</button></div>`; }
-function drawCustom(){ const b=$('cmodalBody'); let h='';
-  h+=`<div class="csec">Custom dimensions</div>`;
-  h+= CDIMS.length?`<div class="clist">`+CDIMS.map(cd=>`<div class="crow"><b>${esc(cd.label)}</b> <span class="subttl">→ ${esc(cdLabels(cd).join(' / '))}</span><span style="flex:1"></span><span class="cx cd-del" data-k="${cd.key}">Delete</span></div>`).join('')+`</div>`:`<div class="chint">None yet.</div>`;
-  h+=`<div class="cbox"><h4>New dimension</h4>
-    <div class="crow">Name <input type="text" id="nd-name" placeholder="e.g. Black Friday related" style="min-width:220px"></div>
+function dimFormHTML(cd){ const ed=!!cd;
+  const rules = ed && cd.rules && cd.rules.length ? cd.rules.map(ruleBlockHTML).join('') : ruleBlockHTML();
+  return `<div class="cbox"><h4>${ed?'Edit dimension':'New dimension'}</h4>
+    <div class="crow">Name <input type="text" id="nd-name" value="${ed?escA(cd.label):''}" placeholder="e.g. Black Friday related" style="min-width:220px"></div>
     <div class="chint">A row takes the first matching rule's label, else the otherwise label. Add rules for extra buckets or OR-logic (two rules with the same label = OR).</div>
-    <div id="nd-rules">${ruleBlockHTML()}</div>
+    <div id="nd-rules">${rules}</div>
     <button class="cbtn" id="nd-addrule" type="button">＋ rule</button>
-    <div class="crow" style="margin-top:10px">Otherwise (rows matching no rule) <input type="text" id="nd-else" value="Other" style="min-width:140px"></div>
-    <div style="margin-top:8px"><button class="cbtn" id="nd-save" type="button" style="color:#fff;background:var(--accent);border-color:var(--accent)">Save dimension</button></div></div>`;
-  h+=`<div class="csec">Custom metrics</div>`;
-  h+= CMETS.length?`<div class="clist">`+CMETS.map(cm=>`<div class="crow"><b>${esc(cm.label)}</b> <span class="subttl">= ${esc(cm.expr)}</span><span style="flex:1"></span><span class="cx cm-del" data-i="${cm.id}">Delete</span></div>`).join('')+`</div>`:`<div class="chint">None yet.</div>`;
-  h+=`<div class="cbox"><h4>New metric</h4>
-    <div class="crow">Name <input type="text" id="nm-name" placeholder="e.g. Impressions per ad" style="min-width:200px"></div>
-    <div class="crow">Formula <input type="text" id="nm-expr" placeholder="impressions / ads" style="min-width:300px"></div>
+    <div class="crow" style="margin-top:10px">Otherwise (rows matching no rule) <input type="text" id="nd-else" value="${ed?escA(cd.otherwise||'Other'):'Other'}" style="min-width:140px"></div>
+    <div style="margin-top:8px"><button class="cbtn" id="nd-save" type="button" style="color:#fff;background:var(--accent);border-color:var(--accent)">${ed?'Update dimension':'Save dimension'}</button>${ed?' <button class="cbtn" id="nd-cancel" type="button">Cancel</button>':''}</div></div>`; }
+function metFormHTML(cm){ const ed=!!cm;
+  return `<div class="cbox"><h4>${ed?'Edit metric':'New metric'}</h4>
+    <div class="crow">Name <input type="text" id="nm-name" value="${ed?escA(cm.label):''}" placeholder="e.g. Impressions per ad" style="min-width:200px"></div>
+    <div class="crow">Formula <input type="text" id="nm-expr" value="${ed?escA(cm.expr):''}" placeholder="impressions / ads" style="min-width:300px"></div>
     <div class="chint">Variables: impressions, clicks, purchases, spend, revenue, ads, advertisers · operators + − * / ( ). Pooled cell totals; also shown as % under the % modes. Examples: revenue / clicks · impressions / ads · ads / advertisers</div>
-    <div class="crow">Format <select id="nm-fmt"><option value="num">Number</option><option value="money">Money ($)</option><option value="rate">Percent (%)</option></select> · <label style="cursor:pointer"><input type="checkbox" id="nm-hi" checked> higher is better</label></div>
-    <div style="margin-top:8px"><button class="cbtn" id="nm-save" type="button" style="color:#fff;background:var(--accent);border-color:var(--accent)">Save metric</button></div></div>`;
+    <div class="crow">Format <select id="nm-fmt"><option value="num"${ed&&cm.fmt==='num'?' selected':''}>Number</option><option value="money"${ed&&cm.fmt==='money'?' selected':''}>Money ($)</option><option value="rate"${ed&&cm.fmt==='rate'?' selected':''}>Percent (%)</option></select> · <label style="cursor:pointer"><input type="checkbox" id="nm-hi" ${(!ed||cm.hi!==false)?'checked':''}> higher is better</label></div>
+    <div style="margin-top:8px"><button class="cbtn" id="nm-save" type="button" style="color:#fff;background:var(--accent);border-color:var(--accent)">${ed?'Update metric':'Save metric'}</button>${ed?' <button class="cbtn" id="nm-cancel" type="button">Cancel</button>':''}</div></div>`; }
+function drawCustom(){ const b=$('cmodalBody');
+  const edCd=editDimKey?CDIMS.find(c=>c.key===editDimKey):null, edCm=editMetId?CMETS.find(c=>c.id===editMetId):null;
+  let h='';
+  h+=`<div class="csec">Custom dimensions</div>`;
+  h+= CDIMS.length?`<div class="clist">`+CDIMS.map(cd=>`<div class="crow"><b>${esc(cd.label)}</b> <span class="subttl">→ ${esc(cdLabels(cd).join(' / '))}</span><span style="flex:1"></span><span class="cx cd-edit" data-k="${cd.key}" style="color:var(--accent)">Edit</span> <span class="cx cd-del" data-k="${cd.key}">Delete</span></div>`).join('')+`</div>`:`<div class="chint">None yet.</div>`;
+  h+=dimFormHTML(edCd);
+  h+=`<div class="csec">Custom metrics</div>`;
+  h+= CMETS.length?`<div class="clist">`+CMETS.map(cm=>`<div class="crow"><b>${esc(cm.label)}</b> <span class="subttl">= ${esc(cm.expr)}</span><span style="flex:1"></span><span class="cx cm-edit" data-i="${cm.id}" style="color:var(--accent)">Edit</span> <span class="cx cm-del" data-i="${cm.id}">Delete</span></div>`).join('')+`</div>`:`<div class="chint">None yet.</div>`;
+  h+=metFormHTML(edCm);
   b.innerHTML=h; b.querySelectorAll('select.c-col').forEach(sel=>ensureDatalist(sel.value)); wireCustom(); }
 function wireCustom(){ const b=$('cmodalBody');
-  b.querySelectorAll('.cd-del').forEach(e=>e.onclick=()=>{const k=e.dataset.k; CDIMS=CDIMS.filter(c=>c.key!==k); if(fstate[k])fstate[k].values.clear(); if(cmp===k)cmp='design_tags'; if(spl===k)spl=''; afterCustomChange();});
-  b.querySelectorAll('.cm-del').forEach(e=>e.onclick=()=>{const i=e.dataset.i; CMETS=CMETS.filter(c=>c.id!==i); afterCustomChange();});
+  b.querySelectorAll('.cd-del').forEach(e=>e.onclick=()=>{const k=e.dataset.k; CDIMS=CDIMS.filter(c=>c.key!==k); if(editDimKey===k)editDimKey=null; if(fstate[k])fstate[k].values.clear(); if(cmp===k)cmp='design_tags'; if(spl===k)spl=''; afterCustomChange();});
+  b.querySelectorAll('.cm-del').forEach(e=>e.onclick=()=>{const i=e.dataset.i; CMETS=CMETS.filter(c=>c.id!==i); if(editMetId===i)editMetId=null; afterCustomChange();});
+  b.querySelectorAll('.cd-edit').forEach(e=>e.onclick=()=>{editDimKey=e.dataset.k; editMetId=null; drawCustom(); const el=$('nd-name'); if(el){el.scrollIntoView({block:'center'});el.focus();}});
+  b.querySelectorAll('.cm-edit').forEach(e=>e.onclick=()=>{editMetId=e.dataset.i; editDimKey=null; drawCustom(); const el=$('nm-name'); if(el){el.scrollIntoView({block:'center'});el.focus();}});
   b.querySelectorAll('.c-col').forEach(sel=>sel.onchange=()=>{ensureDatalist(sel.value); const inp=sel.parentElement.querySelector('.c-text'); if(inp)inp.setAttribute('list','dl_'+sel.value);});
   b.querySelectorAll('.c-condx').forEach(e=>e.onclick=()=>{const holder=e.closest('.r-conds'); if(holder.querySelectorAll('.cond').length>1)e.closest('.cond').remove();});
   b.querySelectorAll('.r-addcond').forEach(btn=>btn.onclick=()=>{const holder=btn.previousElementSibling; const tmp=document.createElement('div'); tmp.innerHTML=condRowHTML(); holder.appendChild(tmp.firstElementChild); wireCustom();});
   b.querySelectorAll('.r-rulex').forEach(e=>e.onclick=()=>{if($('nd-rules').querySelectorAll('.rule').length>1)e.closest('.rule').remove();});
   const ar=$('nd-addrule'); if(ar)ar.onclick=()=>{const tmp=document.createElement('div');tmp.innerHTML=ruleBlockHTML();$('nd-rules').appendChild(tmp.firstElementChild);wireCustom();};
-  const ds=$('nd-save'); if(ds)ds.onclick=saveDimFromForm; const ms=$('nm-save'); if(ms)ms.onclick=saveMetFromForm; }
+  const ds=$('nd-save'); if(ds)ds.onclick=saveDimFromForm; const ms=$('nm-save'); if(ms)ms.onclick=saveMetFromForm;
+  const ndc=$('nd-cancel'); if(ndc)ndc.onclick=()=>{editDimKey=null;drawCustom();}; const nmc=$('nm-cancel'); if(nmc)nmc.onclick=()=>{editMetId=null;drawCustom();}; }
 function readRule(el){ const conds=[...el.querySelectorAll('.cond')].map(c=>({col:c.querySelector('.c-col').value,text:c.querySelector('.c-text').value.trim()})).filter(c=>c.text);
   return {label:(el.querySelector('.r-label').value.trim()||'match'),conn:el.querySelector('.r-conn').value,conds}; }
 function saveDimFromForm(){ const name=$('nd-name').value.trim(); if(!name){st('name the dimension');return;}
   const rules=[...$('nd-rules').querySelectorAll('.rule')].map(readRule).filter(r=>r.conds.length);
   if(!rules.length){st('add at least one condition with text');return;}
-  CDIMS.push({key:'cd_'+Date.now().toString(36),label:name,otherwise:($('nd-else').value.trim()||'Other'),rules}); afterCustomChange(); }
+  const otherwise=($('nd-else').value.trim()||'Other');
+  if(editDimKey){ const cd=CDIMS.find(c=>c.key===editDimKey); if(cd){cd.label=name;cd.otherwise=otherwise;cd.rules=rules;} editDimKey=null; }
+  else CDIMS.push({key:'cd_'+Date.now().toString(36),label:name,otherwise,rules});
+  afterCustomChange(); }
 function saveMetFromForm(){ const name=$('nm-name').value.trim(), expr=$('nm-expr').value.trim(); if(!name||!expr){st('name and formula required');return;}
   try{cmCompile(expr);}catch(e){st('invalid formula: '+e.message);return;}
-  CMETS.push({id:'cm_'+Date.now().toString(36),label:name,expr,fmt:$('nm-fmt').value,hi:$('nm-hi').checked}); afterCustomChange(); }
+  const fmt=$('nm-fmt').value, hi=$('nm-hi').checked;
+  if(editMetId){ const cm=CMETS.find(c=>c.id===editMetId); if(cm){cm.label=name;cm.expr=expr;cm.fmt=fmt;cm.hi=hi;} editMetId=null; }
+  else CMETS.push({id:'cm_'+Date.now().toString(36),label:name,expr,fmt,hi});
+  afterCustomChange(); }
 function afterCustomChange(){ saveCustom(); rebuildDims(); buildSidebar(); drawCustom(); $('cmpLab').textContent=DMAP[cmp]?DMAP[cmp].label:cmp; $('splLab').textContent=(spl&&DMAP[spl])?DMAP[spl].label:'— none —'; run(); }
 $('customBtn').onclick=()=>{ if(!loaded){st('load a dataset first');return;} drawCustom(); $('cmodal').classList.add('open'); };
 $('cmodalClose').onclick=()=>$('cmodal').classList.remove('open');
