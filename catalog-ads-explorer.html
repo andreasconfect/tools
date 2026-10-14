@@ -733,7 +733,7 @@ function dimFormHTML(cd){ const ed=!!cd;
   const rules = ed && cd.rules && cd.rules.length ? cd.rules.map(ruleBlockHTML).join('') : ruleBlockHTML();
   return `<div class="cbox"><h4>${ed?'Edit dimension':'New dimension'}</h4>
     <div class="crow">Name <input type="text" id="nd-name" value="${ed?escA(cd.label):''}" placeholder="e.g. Black Friday related" style="min-width:220px"></div>
-    <div class="chint">A row takes the first matching rule's label, else the otherwise label. Add rules for extra buckets or OR-logic (two rules with the same label = OR).</div>
+    <div class="chint">An ad is tagged with <b>every</b> rule-label it matches (like built-in tags — one ad can appear in several rows), or the otherwise label if it matches none. Two rules sharing a label = OR.</div>
     <div id="nd-rules">${rules}</div>
     <button class="cbtn" id="nd-addrule" type="button">＋ rule</button>
     <div class="crow" style="margin-top:10px">Otherwise (rows matching no rule) <input type="text" id="nd-else" value="${ed?escA(cd.otherwise||'Other'):'Other'}" style="min-width:140px"></div>
