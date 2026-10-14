@@ -6214,6 +6214,128 @@
         document.getElementById('dataInfo').textContent =
           `Parsed ${DATA.rows.length} rows · ${DATA.dims.length} group-by (${DATA.dims.join(', ')}) · ${DATA.metrics.length} metrics.`;
       }
+      /* ---------- RELOAD DATA, KEEP THE CHART ----------
+   When new/edited data is loaded over an existing chart, carry the prior configuration onto the new data so the
+   user doesn't have to rebuild. Identity-bound choices (which groups/metrics are shown, their order, per-group
+   colours & renames) are matched by key: anything whose group/metric still exists is preserved; genuinely new
+   rows/metrics get sensible defaults; vanished ones fall away. Pure styling (type, colours, axis, format, detail,
+   layout toggles, titles) carries verbatim. Call AFTER initState() has rebuilt S for the new DATA. */
+      function mergePrevConfig(prev, oldDef) {
+        const newMetricHeaders = DATA.metrics.map((m) => m.header);
+        const newMetricSet = new Set(newMetricHeaders);
+        const newRowKeys = DATA.rows.map((r) => r.key);
+        const newRowSet = new Set(newRowKeys);
+
+        // Styling / toggles not tied to a specific group or metric identity — carried verbatim.
+        const CARRY = [
+          'type', 'format', 'loc', 'showValues', 'showLogo', 'axisMode', 'valueMode',
+          'showHead', 'showSub', 'showInfo', 'showX', 'showY', 'xTitle', 'xTitleAuto',
+          'yTitle', 'yTitleAuto', 'tickCount', 'barColor', 'secondary', 'detail',
+          'fileType', 'expScale', 'bg', 'showAvg', 'zeroBase', 'tableSwap', 'groupSwap',
+          'refLine', 'refLabel', 'scatterXVal', 'scatterYVal', 'tileOrder',
+        ];
+        CARRY.forEach((k) => {
+          if (k in prev) S[k] = prev[k];
+        });
+
+        // Keyed overrides — keep the user's entries. Stale keys (gone from the new data) just sit unused and
+        // would re-apply if those rows/metrics ever return, so there's no harm keeping them.
+        S.rename = Object.assign({}, prev.rename || {});
+        S.metricRename = Object.assign({}, prev.metricRename || {});
+        S.colorOverride = Object.assign({}, prev.colorOverride || {});
+        S.labelHidden = Object.assign({}, prev.labelHidden || {});
+
+        // Metric order: user's order for metrics that still exist, then any genuinely new metric appended.
+        const prevOrder = (prev.metricOrder || []).filter((h) => newMetricSet.has(h));
+        S.metricOrder = [
+          ...prevOrder,
+          ...newMetricHeaders.filter((h) => !prevOrder.includes(h)),
+        ];
+
+        // Metric visibility: a metric present before keeps its shown/hidden state; a brand-new metric starts
+        // hidden, so the carried-over selection is what the user had, not a suddenly wider set.
+        const prevMetricHidden = new Set(
+          prev.metricHidden instanceof Set
+            ? [...prev.metricHidden]
+            : prev.metricHidden || [],
+        );
+        const prevHadMetric = new Set(prev.metricOrder || []);
+        const mh = new Set();
+        newMetricHeaders.forEach((h) => {
+          if (prevHadMetric.has(h)) {
+            if (prevMetricHidden.has(h)) mh.add(h);
+          } else mh.add(h);
+        });
+        S.metricHidden = mh;
+
+        // Group slots: keep the user's order (and any "skip colour" markers) for rows that still exist, then
+        // append brand-new rows at the end.
+        const prevSlots = (prev.slots || []).filter(
+          (k) => k.startsWith('__skip') || newRowSet.has(k),
+        );
+        S.slots = [...prevSlots, ...newRowKeys.filter((k) => !prevSlots.includes(k))];
+
+        // Hidden rows: a row present before keeps its hide state; a brand-new row shows (baseline stays hidden).
+        const prevHidden = new Set(
+          prev.hidden instanceof Set ? [...prev.hidden] : prev.hidden || [],
+        );
+        const prevHadRow = new Set(
+          (prev.slots || []).filter((k) => !k.startsWith('__skip')),
+        );
+        const hid = new Set();
+        newRowKeys.forEach((k) => {
+          if (prevHadRow.has(k)) {
+            if (prevHidden.has(k)) hid.add(k);
+          } else if (isBaseline(k)) hid.add(k);
+        });
+        S.hidden = hid;
+
+        // Keep the carried selection valid for the current chart type (reveal more only if the type needs it,
+        // trim to one for single-metric types, fix donut/by-category edge cases) — mirrors onType()'s guarantees
+        // without discarding an otherwise-valid selection.
+        reconcileMetricCountForType();
+        if (S.type === 'bar' && DATA.dims.length < 2 && S.barColor === 'byCat')
+          S.barColor = 'single'; // "By <dim2>" has no meaning once there's only one group-by
+
+        // Headline honours its manual-edit flag. Sub-head and footer line: refresh to the NEW data's auto text
+        // only if the user never customised them (they still equalled the OLD auto text); otherwise keep theirs.
+        S.headlineAuto = prev.headlineAuto !== false;
+        S.subhead = prev.subhead === oldDef.sub ? defaultSub() : prev.subhead;
+        S.infoText = prev.infoText === oldDef.info ? defaultInfo() : prev.infoText;
+        S.headline = S.headlineAuto ? defaultHeadline() : prev.headline;
+
+        // Tiles were rebuilt from the new study totals by initState(); re-apply the saved tile order.
+        applyTileOrder();
+      }
+      function reconcileMetricCountForType() {
+        const order = S.metricOrder;
+        const shown = () => order.filter((h) => !S.metricHidden.has(h));
+        const need = { smallmult: 2, scatter: 2 }[S.type] || 1;
+        for (const h of order) {
+          if (shown().length >= need) break;
+          S.metricHidden.delete(h); // reveal metrics in order until the type's minimum is met
+        }
+        if (S.type === 'bar' || S.type === 'diverging') {
+          const sh = shown();
+          if (sh.length > 1)
+            S.metricHidden = new Set(order.filter((h) => h !== sh[0])); // exactly one
+        }
+        if (S.type === 'donut') {
+          const sel = shown()
+            .map((h) => DATA.metrics.find((m) => m.header === h))
+            .filter(Boolean);
+          if (!sel.length || sel.some((m) => m.kind !== 'count')) {
+            const counts = DATA.metrics.filter((m) => m.kind === 'count');
+            const pick = counts[0] || DATA.metrics[0];
+            if (pick)
+              S.metricHidden = new Set(
+                DATA.metrics
+                  .filter((m) => m.header !== pick.header)
+                  .map((m) => m.header),
+              );
+          }
+        }
+      }
       // opts.silent skips the immediate auto-save — used only for the app's own startup bootstrap load, so
       // reloading the page doesn't fork a fresh "ROAS by Ad theme" gallery entry every time; the debounced
       // save in render() still kicks in the moment the user actually touches that bootstrap chart.
@@ -6226,10 +6348,27 @@
         // one — so its currentGalleryId is deliberately kept instead of reset to null like a normal fresh load.
         const fillingBlankPlaceholder =
           DATA === null && currentGalleryId != null;
+        // A real chart is already on screen → the user pasting + Load is REPLACING this chart's data (e.g. they
+        // re-exported with one more filter in Data Explorer). They expect to keep editing the SAME slide with as
+        // much of their styling intact as possible — NOT to spawn a fresh slide that resets every choice. So we
+        // keep the current gallery binding and migrate the prior config onto the new data (see mergePrevConfig).
+        // opts.freshConfig forces the old reset-to-defaults behaviour; opts.silent is only the startup bootstrap.
+        const hadChart = DATA !== null && S !== null;
+        const preserve =
+          hadChart && !fillingBlankPlaceholder && !opts.silent && !opts.freshConfig;
+        const prevS = preserve ? S : null;
+        const prevDefaults = preserve
+          ? { head: defaultHeadline(), sub: defaultSub(), info: defaultInfo() }
+          : null; // captured under the OLD data, to tell "still auto" sub/footer text from user-customised
         try {
           DATA = parseData(raw);
           initState();
-          if (!fillingBlankPlaceholder) currentGalleryId = null;
+          if (preserve) {
+            mergePrevConfig(prevS, prevDefaults); // overlay the prior chart's choices onto the new data
+            // keep currentGalleryId → the same gallery slide is updated in place, not duplicated
+          } else if (!fillingBlankPlaceholder) {
+            currentGalleryId = null;
+          }
           showControls();
           sync();
           if (opts.silent) {
